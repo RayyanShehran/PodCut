@@ -86,3 +86,57 @@ test("recipe changes invalidate review and long text wraps", async ({ page }) =>
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(280);
   await expect(page.locator("#analyze")).toBeVisible();
 });
+
+test("host-safe controls keep explicit geometry, typography, and icons", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 520 });
+  await page.goto(panelUrl);
+  await expect(page.locator("#refreshSequence")).toBeEnabled();
+  await expect(page.locator("#refreshSequence img")).toHaveJSProperty("naturalWidth", 16);
+
+  const styles = await page.evaluate(() => {
+    const css = (selector) => getComputedStyle(document.querySelector(selector));
+    const card = document.querySelector(".sequence-card").getBoundingClientRect();
+    const content = document.querySelector(".content-scroll").getBoundingClientRect();
+    const refresh = css("#refreshSequence");
+    const analyze = css("#analyze");
+    const developer = css("#developerToggle");
+    const dot = css("#sequenceDot");
+    return {
+      cardPadding: css(".sequence-card").padding,
+      dotWidth: dot.width,
+      dotMarginRight: dot.marginRight,
+      rowDisplay: css(".sequence-status-row").display,
+      scrollbarClearance: Math.round(content.right - card.right),
+      refreshSize: [refresh.width, refresh.height],
+      analyze: [analyze.height, analyze.borderRadius, analyze.backgroundColor, analyze.color, analyze.opacity, analyze.fontFamily, analyze.fontSize, analyze.fontWeight],
+      developer: [developer.height, developer.backgroundColor, developer.fontFamily, developer.fontSize, developer.fontWeight],
+      progressAnimation: css("#progressFill").animationName
+    };
+  });
+  expect(styles.cardPadding).toBe("16px");
+  expect(styles.dotWidth).toBe("6px");
+  expect(styles.dotMarginRight).toBe("8px");
+  expect(styles.rowDisplay).toBe("flex");
+  expect(styles.scrollbarClearance).toBeGreaterThanOrEqual(10);
+  expect(styles.refreshSize).toEqual(["32px", "32px"]);
+  expect(styles.analyze).toEqual(["36px", "6px", "rgb(0, 0, 0)", "rgb(110, 114, 122)", "1", '"Segoe UI", Arial, sans-serif', "13px", "500"]);
+  expect(styles.developer).toEqual(["32px", "rgb(0, 0, 0)", '"Segoe UI", Arial, sans-serif', "12px", "400"]);
+  expect(styles.progressAnimation).toBe("none");
+
+  await page.locator("#developerToggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#developerToggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#developerPanel")).toBeVisible();
+
+  await page.evaluate(() => {
+    window.refreshCalls = 0;
+    const activeSequence = PodCutPremiere.activeSequence;
+    PodCutPremiere.activeSequence = async () => { window.refreshCalls += 1; return activeSequence(); };
+  });
+  await page.locator("#refreshSequence").click();
+  await expect.poll(() => page.evaluate(() => window.refreshCalls)).toBe(1);
+
+  await page.locator("#analyze").evaluate((button) => { button.disabled = false; });
+  await expect(page.locator("#analyze")).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(page.locator("#analyze")).toHaveCSS("border-color", "rgb(110, 114, 122)");
+});

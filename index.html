@@ -14,17 +14,19 @@
           <p>Find quiet sections before making an edit.</p>
         </div>
         <button id="refreshSequence" class="icon-button" title="Refresh sequence" aria-label="Refresh active sequence">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7" /></svg>
+          <img src="src/icons/refresh.svg" alt="" aria-hidden="true" />
         </button>
       </header>
 
       <div class="content-scroll">
         <section class="sequence-card" aria-live="polite">
-          <span class="status-dot" id="sequenceDot"></span>
-          <div>
-            <span class="eyebrow">Active sequence</span>
-            <strong id="sequenceName">Checking Premiere…</strong>
-            <small id="sequenceMeta"></small>
+          <span class="eyebrow">Active sequence</span>
+          <div class="sequence-status-row">
+            <span class="status-dot" id="sequenceDot"></span>
+            <div class="sequence-copy">
+              <strong id="sequenceName">Checking Premiere…</strong>
+              <small id="sequenceMeta"></small>
+            </div>
           </div>
         </section>
 
@@ -46,7 +48,7 @@
             </div>
             <div class="settings" data-settings-for="cutSilence">
               <label><span>Minimum silence</span><span class="value"><input type="number" min="0.1" max="10" step="0.1" data-setting="cutSilence.minimumSeconds" /><span class="unit">s</span></span></label>
-              <button class="disclosure" id="advancedToggle" type="button" aria-expanded="false" aria-controls="advancedSettings"><span>Advanced</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></button>
+              <button class="disclosure" id="advancedToggle" type="button" aria-expanded="false" aria-controls="advancedSettings"><span>Advanced</span><img src="src/icons/chevron-down.svg" alt="" aria-hidden="true" /></button>
               <div id="advancedSettings" class="advanced" hidden>
                 <label><span>Padding before</span><span class="value"><input type="number" min="0" max="2" step="0.05" data-setting="cutSilence.paddingBefore" /><span class="unit">s</span></span></label>
                 <label><span>Padding after</span><span class="value"><input type="number" min="0" max="2" step="0.05" data-setting="cutSilence.paddingAfter" /><span class="unit">s</span></span></label>
@@ -80,7 +82,7 @@
         </section>
 
         <section class="developer-section">
-          <button class="disclosure section-disclosure" id="developerToggle" type="button" aria-expanded="false" aria-controls="developerPanel"><span>Developer</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></button>
+          <button class="disclosure section-disclosure" id="developerToggle" type="button" aria-expanded="false" aria-controls="developerPanel"><span>Developer</span><img src="src/icons/chevron-down.svg" alt="" aria-hidden="true" /></button>
           <div id="developerPanel" class="developer-panel" hidden>
             <p>Filler-word removal needs a transcript and is not available.</p>
             <button id="testAudio" class="button secondary">Analyze generated PCM</button>
