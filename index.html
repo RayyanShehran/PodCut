@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="src/styles.css" />
+    <title>PodCut</title>
+  </head>
+  <body>
+    <main id="app">
+      <header class="app-header">
+        <div>
+          <h1>PodCut</h1>
+          <p>Clean up your edit without losing control.</p>
+        </div>
+        <button id="refreshSequence" class="icon-button" title="Refresh sequence" aria-label="Refresh active sequence">↻</button>
+      </header>
+
+      <section class="sequence-bar" aria-live="polite">
+        <span class="status-dot" id="sequenceDot"></span>
+        <div>
+          <span class="eyebrow">Active Sequence</span>
+          <strong id="sequenceName">Checking Premiere…</strong>
+          <small id="sequenceMeta"></small>
+        </div>
+      </section>
+
+      <section>
+        <label class="field-label" for="preset">Preset</label>
+        <select id="preset"></select>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <h2>Edit Recipe</h2>
+          <span id="recipeStatus">3 operations</span>
+        </div>
+
+        <article class="operation" data-operation="cutSilence">
+          <div class="operation-title">
+            <label><input type="checkbox" data-setting="cutSilence.enabled" /> <span>Cut Silence</span></label>
+            <span class="badge">Audio</span>
+          </div>
+          <div class="settings" data-settings-for="cutSilence">
+            <label>Minimum silence <span><input type="number" min="0.1" max="10" step="0.1" data-setting="cutSilence.minimumSeconds" /> s</span></label>
+            <label>Padding before <span><input type="number" min="0" max="2" step="0.05" data-setting="cutSilence.paddingBefore" /> s</span></label>
+            <label>Padding after <span><input type="number" min="0" max="2" step="0.05" data-setting="cutSilence.paddingAfter" /> s</span></label>
+            <label>Editing style
+              <select data-setting="cutSilence.style">
+                <option value="natural">Natural</option>
+                <option value="balanced">Balanced</option>
+                <option value="tight">Tight</option>
+              </select>
+            </label>
+          </div>
+        </article>
+
+        <article class="operation" data-operation="fillerWords">
+          <div class="operation-title">
+            <label><input type="checkbox" data-setting="fillerWords.enabled" /> <span>Remove Filler Words</span></label>
+            <span class="badge warning">Needs transcript</span>
+          </div>
+          <p class="note">Recipe only. Context-aware transcript analysis is not implemented.</p>
+          <div class="settings options" data-settings-for="fillerWords">
+            <label><input type="checkbox" data-setting="fillerWords.umUh" /> Um / Uh</label>
+            <label><input type="checkbox" data-setting="fillerWords.like" /> Like</label>
+            <label><input type="checkbox" data-setting="fillerWords.youKnow" /> You know</label>
+            <label><input type="checkbox" data-setting="fillerWords.repeatedWords" /> Repeated words</label>
+            <label><input type="checkbox" data-setting="fillerWords.falseStarts" /> False starts</label>
+          </div>
+        </article>
+
+        <article class="operation" data-operation="longPauses">
+          <div class="operation-title">
+            <label><input type="checkbox" data-setting="longPauses.enabled" /> <span>Remove Long Pauses</span></label>
+            <span class="badge">Audio</span>
+          </div>
+          <div class="settings" data-settings-for="longPauses">
+            <label>Pause threshold <span><input type="number" min="1" max="30" step="0.5" data-setting="longPauses.thresholdSeconds" /> s</span></label>
+            <label>Leave natural pause <span><input type="number" min="0.1" max="5" step="0.1" data-setting="longPauses.keepSeconds" /> s</span></label>
+          </div>
+        </article>
+      </section>
+
+      <div id="message" class="message" hidden></div>
+      <button id="analyze" class="primary" disabled>Analyze Sequence</button>
+      <button id="demo" class="secondary">Preview Demo Review</button>
+
+      <section id="review" hidden>
+        <div class="section-heading">
+          <h2>Analysis Summary</h2>
+          <span id="reviewLabel"></span>
+        </div>
+        <div id="summary" class="summary-grid"></div>
+        <h3>Detected Edits</h3>
+        <div id="decisions" class="decisions"></div>
+        <button id="apply" class="primary" disabled>Apply to Timeline</button>
+        <p class="safety">Timeline changes stay disabled until real, reviewable detections are available.</p>
+      </section>
+    </main>
+
+    <script src="src/core.js"></script>
+    <script src="src/premiere.js"></script>
+    <script src="src/main.js"></script>
+  </body>
+</html>

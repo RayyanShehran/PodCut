@@ -1,0 +1,5 @@
+dist/
+*.ccx
+*.uxpaddon
+.DS_Store
+Thumbs.db

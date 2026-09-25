@@ -1,0 +1,11 @@
+{
+  "name": "podcut",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A controllable, non-destructive editing assistant for Adobe Premiere Pro.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs"
+  }
+}
