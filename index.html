@@ -16,6 +16,8 @@
         <button id="refreshSequence" class="icon-button" title="Refresh sequence" aria-label="Refresh active sequence">↻</button>
       </header>
 
+      <div class="content-scroll">
+
       <section class="sequence-bar" aria-live="polite">
         <span class="status-dot" id="sequenceDot"></span>
         <div>
@@ -82,10 +84,6 @@
         </article>
       </section>
 
-      <div id="message" class="message" hidden></div>
-      <button id="analyze" class="primary" disabled>Analyze Sequence</button>
-      <button id="testAudio" class="secondary">Analyze Generated Test Audio</button>
-
       <section id="review" hidden>
         <div class="section-heading">
           <h2>Analysis Summary</h2>
@@ -97,6 +95,22 @@
         <button id="apply" class="primary" disabled>Apply to Timeline</button>
         <p class="safety">Timeline changes stay disabled until real, reviewable detections are available.</p>
       </section>
+      </div>
+
+      <footer class="action-bar">
+        <div id="progress" class="progress-panel" hidden>
+          <div class="progress-heading"><strong id="progressStage">Preparing</strong><span id="progressValue"></span></div>
+          <div id="progressTrack" class="progress-track" role="progressbar"><span id="progressFill"></span></div>
+          <small id="progressDetail"></small>
+        </div>
+        <div id="message" class="message" hidden></div>
+        <button id="analyze" class="primary" disabled>Analyze Sequence</button>
+        <button id="testAudio" class="secondary">Analyze Generated Test Audio</button>
+        <details id="diagnostics" hidden>
+          <summary>Export diagnostics</summary>
+          <pre id="diagnosticText"></pre>
+        </details>
+      </footer>
     </main>
 
     <script src="src/audio.js"></script>

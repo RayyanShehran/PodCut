@@ -5,6 +5,10 @@
   let recipe = core.recipeForPreset("natural");
   let sequenceInfo = null;
   let analysisResult = null;
+  let analyzing = false;
+  let exportWaiting = false;
+  let retryBlocked = false;
+  let elapsedTimer = null;
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   const getPath = (path) => path.split(".").reduce((value, key) => value[key], recipe);
@@ -23,6 +27,32 @@
     box.className = `message ${kind || ""}`;
   }
 
+  function progress(stage, detail, completed, total, elapsedMs) {
+    const panel = $("#progress");
+    const track = $("#progressTrack");
+    panel.hidden = false;
+    $("#progressStage").textContent = stage;
+    $("#progressDetail").textContent = detail || "";
+    const determinate = Number.isFinite(completed) && Number.isFinite(total) && total > 0;
+    track.classList.toggle("indeterminate", !determinate);
+    if (determinate) {
+      const percent = Math.min(100, Math.round(completed / total * 100));
+      $("#progressFill").style.width = `${percent}%`;
+      $("#progressValue").textContent = `${percent}%`;
+      track.setAttribute("aria-valuenow", String(percent));
+    } else {
+      $("#progressFill").style.width = "";
+      $("#progressValue").textContent = elapsedMs === undefined ? "" : `${Math.floor(elapsedMs / 60000)}:${String(Math.floor(elapsedMs / 1000) % 60).padStart(2, "0")}`;
+      track.removeAttribute("aria-valuenow");
+    }
+  }
+
+  function showDiagnostics(entries) {
+    if (!entries || !entries.length) return;
+    $("#diagnostics").hidden = false;
+    $("#diagnosticText").textContent = entries.map((entry) => `${entry.elapsedMs}ms ${entry.stage} ${JSON.stringify(entry.detail)}`).join("\n");
+  }
+
   function renderRecipe() {
     $$('[data-setting]').forEach((input) => {
       const value = getPath(input.dataset.setting);
@@ -39,7 +69,7 @@
   }
 
   function setBusy(value) {
-    $("#analyze").disabled = value || !sequenceInfo || sequenceInfo.state !== "ready" || sequenceInfo.audioTracks === 0;
+    $("#analyze").disabled = retryBlocked || value || !sequenceInfo || sequenceInfo.state !== "ready" || sequenceInfo.audioTracks === 0;
     $("#testAudio").disabled = value;
     $("#refreshSequence").disabled = value;
   }
@@ -116,8 +146,8 @@
     setBusy(true);
     $("#testAudio").textContent = "Analyzing…";
     try {
-      await Promise.resolve();
-      renderReview(core.analyzeAudio(generatedAudio(), recipe));
+      progress("Analyzing", "Generated development audio", 0, 1);
+      renderReview(await core.analyzeAudioAsync(generatedAudio(), recipe, (done, total) => progress("Analyzing", `${done} of ${total} frames`, done, total)));
       $("#reviewLabel").textContent = "GENERATED PCM";
       message("Real RMS analysis completed against generated PCM. No Premiere media or demo result counts were used.", "");
     } finally {
@@ -127,22 +157,48 @@
   }
 
   async function analyzeSequence() {
+    if (analyzing) {
+      if (exportWaiting) host.stopWaiting();
+      return;
+    }
     const errors = core.validateRecipe(recipe);
     if (errors.length) return message(errors[0], "error");
+    analyzing = true;
+    exportWaiting = true;
     setBusy(true);
-    $("#analyze").textContent = "Exporting audio…";
+    $("#analyze").disabled = false;
+    $("#analyze").textContent = "Stop waiting";
+    $("#diagnostics").hidden = true;
+    const exportStartedAt = Date.now();
+    let latestDetail = "Resolving Premiere paths and WAV preset";
+    progress("Preparing", latestDetail, undefined, undefined, 0);
+    elapsedTimer = setInterval(() => progress("Exporting audio", latestDetail, undefined, undefined, Date.now() - exportStartedAt), 1000);
     message("Premiere is rendering temporary sequence audio for analysis. The timeline remains unchanged.", "");
     try {
-      const wav = await host.sequenceAudio(sequenceInfo.sequence);
+      const wav = await host.sequenceAudio(sequenceInfo.sequence, (status) => {
+        latestDetail = status.stage === "waiting" ? `Promise ${status.detail.promise}; event ${status.detail.event}; output ${status.detail.output}` : JSON.stringify(status.detail);
+        progress(status.stage === "preparing" || status.stage === "preset" ? "Preparing" : "Exporting audio", latestDetail, undefined, undefined, status.elapsedMs);
+        showDiagnostics(status.diagnostics);
+      });
+      exportWaiting = false;
+      clearInterval(elapsedTimer);
+      $("#analyze").disabled = true;
       $("#analyze").textContent = "Analyzing…";
-      await Promise.resolve();
-      renderReview(core.analyzeAudio(globalThis.PodCutAudio.decodeWav(wav), recipe));
+      const pcm = await globalThis.PodCutAudio.decodeWavAsync(wav, (done, total) => progress("Reading / decoding", `${done} of ${total} samples`, done, total));
+      renderReview(await core.analyzeAudioAsync(pcm, recipe, (done, total) => progress("Analyzing", `${done} of ${total} frames`, done, total)));
       $("#reviewLabel").textContent = "PREMIERE SEQUENCE";
+      progress("Ready", "Review the detected edits below", 1, 1);
       message("Sequence audio analysis complete. Review only; Apply to Timeline remains disabled.", "");
     } catch (error) {
       console.error("PodCut sequence analysis failed", error);
+      clearInterval(elapsedTimer);
+      showDiagnostics(error.diagnostics);
+      $("#progress").hidden = true;
+      if (error.code === "STOPPED_WAITING") retryBlocked = true;
       message(error.message || "Sequence audio analysis failed. See the developer console for details.", "error");
     } finally {
+      analyzing = false;
+      exportWaiting = false;
       $("#analyze").textContent = "Analyze Sequence";
       setBusy(false);
     }

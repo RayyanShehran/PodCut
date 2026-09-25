@@ -7,6 +7,8 @@
 - Recipe toggles, conditional settings, presets, Custom detection, and validation
 - Active sequence metadata, track, and clip inspection through documented Premiere APIs
 - Temporary sequence WAV export and dependency-free 16-bit PCM decoding
+- Export promise/event/output diagnostics with complete WAV and duration validation
+- Bounded panel scrolling, indeterminate export timing, and measured decode/analysis progress
 - Linear-time, dependency-free PCM silence detection using 20 ms RMS/dBFS frames
 - Stereo/multi-channel RMS combination and explicit Natural/Balanced/Tight thresholds
 - Silence and long-pause decisions with padding, enable/disable state, and duration estimates
@@ -16,7 +18,7 @@
 
 ## Partially implemented
 
-- Analysis workflow: Premiere audio acquisition is connected but still needs real-project validation
+- Analysis workflow: Premiere audio acquisition is connected; the installed host's export failure still needs controlled validation
 - Non-destructive editing: safe workflow is defined, but timeline mutation remains disabled
 
 ## Mocked
@@ -27,6 +29,8 @@
 ## Requires Premiere validation
 
 - Obtaining or rendering sequence audio into the detector's planar PCM input
+- Export promise/event/file ordering in Premiere Pro 26.5
+- Docked, floating, narrow, and short panel scrolling after the layout fix
 - Error behavior for empty, offline, nested, multicam, and unusual sequences
 
 ## Planned

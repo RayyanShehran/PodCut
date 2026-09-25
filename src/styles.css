@@ -5,12 +5,15 @@
   font-family: Arial, sans-serif; font-size: 13px; color: var(--text); background: var(--bg);
 }
 * { box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
 body { margin: 0; background: var(--bg); color: var(--text); }
 button, input, select { font: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-#app { min-width: 260px; max-width: 620px; padding: 14px; }
+#app { display: flex; flex-direction: column; height: 100vh; min-width: 260px; max-width: 620px; padding: 12px; overflow: hidden; }
+.content-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 5px; }
+.action-bar { flex: 0 0 auto; padding-top: 10px; border-top: 1px solid var(--border); background: var(--bg); }
 .app-header, .section-heading, .operation-title, .settings label, .sequence-bar { display: flex; align-items: center; }
-.app-header { justify-content: space-between; margin-bottom: 14px; }
+.app-header { flex: 0 0 auto; justify-content: space-between; margin-bottom: 10px; }
 h1 { margin: 0; font-size: 20px; letter-spacing: -.2px; }
 h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; }
 h3 { margin: 14px 0 8px; font-size: 12px; color: var(--muted); }
@@ -66,3 +69,14 @@ button:disabled { opacity: .42; cursor: default; }
 .decisions small, .decisions > label > strong { color: var(--muted); font-size: 9px; }
 .empty, .safety { padding: 8px; background: var(--surface); }
 .safety { text-align: center; }
+.progress-panel { padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+.progress-heading { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.progress-heading span, .progress-panel small { color: var(--muted); }
+.progress-panel small { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.progress-track { height: 3px; margin-top: 7px; overflow: hidden; background: #17181a; }
+.progress-track span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .1s linear; }
+.progress-track.indeterminate span { width: 35%; animation: progress-slide 1.2s ease-in-out infinite; }
+details { margin-top: 8px; color: var(--muted); font-size: 10px; }
+summary { cursor: pointer; }
+pre { max-height: 120px; margin: 6px 0 0; padding: 7px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #17181a; color: #c8c9cd; font: 9px/1.4 monospace; }
+@keyframes progress-slide { from { transform: translateX(-110%); } to { transform: translateX(300%); } }

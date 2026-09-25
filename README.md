@@ -10,6 +10,7 @@ PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors 
 - Data-driven Natural Podcast, Tight Podcast, YouTube Fast-Paced, and Custom presets
 - Real PCM silence detection and long-pause derivation
 - Temporary Premiere sequence-audio export and 16-bit PCM WAV decoding
+- Export diagnostics plus measured decode and analysis progress
 - Reviewable edit decisions with padding, timing, enable/disable controls, and duration estimates
 - Generated PCM development input for exercising the real detector without Premiere
 - Apply action intentionally disabled until Premiere timeline integration is validated
@@ -73,7 +74,7 @@ Analysis remains separate from timeline operations: PCM input → detected range
 
 ## Host integration and limitations
 
-The adapter uses documented Premiere UXP APIs for active-sequence inspection and immediate sequence export. Audio is rendered to the plugin's temporary folder using Premiere's bundled 48 kHz/16-bit WAV preset, decoded, analyzed, and removed. The current preset lookup targets Premiere's Windows installation layout and still needs host validation. Applying time-range edits safely requires mapping detections to linked audio/video track items, so timeline mutation remains disabled.
+The adapter uses documented Premiere UXP APIs for active-sequence inspection and immediate sequence export. Audio is rendered to the plugin's temporary folder using Premiere's bundled 48 kHz/16-bit WAV preset, validated against the sequence duration, decoded, analyzed, and removed after success. Export diagnostics record promise, completion-event, and output-file state so host failures are reported without guessing. The current preset lookup targets Premiere's Windows installation layout and still needs host validation. Applying time-range edits safely requires mapping detections to linked audio/video track items, so timeline mutation remains disabled.
 
 The panel, lifecycle, layout, and active-sequence reads have been validated in Premiere Pro 26.5. See [docs/STATUS.md](docs/STATUS.md).
 
