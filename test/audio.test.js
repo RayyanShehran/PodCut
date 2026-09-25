@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { decodeWav, detectSilences } = require("../src/audio.js");
+const { decodeWav, detectSilences, wavInfo } = require("../src/audio.js");
 
 function audio(segments, channels = 1, sampleRate = 1000) {
   const values = segments.flatMap(({ seconds, level }) => Array(Math.round(seconds * sampleRate)).fill(level));
@@ -23,11 +23,21 @@ function pcm16Wav(samples, channels = 1, sampleRate = 48000) {
 }
 
 test("16-bit stereo WAV decodes to RMS-preserving PCM", () => {
-  const decoded = decodeWav(pcm16Wav([16384, 0, 0, 16384], 2));
+  const buffer = pcm16Wav([16384, 0, 0, 16384], 2);
+  const decoded = decodeWav(buffer);
+  assert.equal(wavInfo(buffer).durationSeconds, 2 / 48000);
   assert.equal(decoded.sampleRate, 48000);
   assert.equal(decoded.channels[0].length, 2);
   assert.ok(Math.abs(decoded.channels[0][0] - Math.sqrt(0.5 * 0.5 / 2)) < 1e-6);
   assert.ok(Math.abs(decoded.channels[0][1] - Math.sqrt(0.5 * 0.5 / 2)) < 1e-6);
+});
+
+test("truncated and unsupported WAV files are rejected", () => {
+  const truncated = pcm16Wav([0, 0]);
+  assert.throws(() => wavInfo(truncated.slice(0, truncated.byteLength - 1)), /chunk size/);
+  const unsupported = pcm16Wav([0]);
+  new DataView(unsupported).setUint16(34, 24, true);
+  assert.throws(() => wavInfo(unsupported), /16-bit PCM/);
 });
 
 test("speech-only audio has no silence", () => {

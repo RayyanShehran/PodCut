@@ -79,3 +79,12 @@ test("disabled recipe operations produce no decisions", () => {
 test("timestamps preserve millisecond precision", () => {
   assert.equal(core.formatTimestamp(84.35), "00:01:24.350");
 });
+
+test("chunked analysis reports real frame progress without changing results", async () => {
+  const input = audio([{ seconds: 0.5, level: 0.2 }, { seconds: 2, level: 0 }, { seconds: 0.5, level: 0.2 }]);
+  const recipe = core.recipeForPreset("natural");
+  const progress = [];
+  const chunked = await core.analyzeAudioAsync(input, recipe, (processed, total) => progress.push([processed, total]));
+  assert.deepEqual(chunked, core.analyzeAudio(input, recipe));
+  assert.deepEqual(progress.at(-1), [150, 150]);
+});

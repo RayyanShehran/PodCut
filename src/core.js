@@ -94,10 +94,7 @@
     }).filter((decision) => decision.removeSeconds > 0);
   }
 
-  function analyzeAudio(audioInput, recipe) {
-    const errors = validateRecipe(recipe);
-    if (errors.length) throw new Error(errors[0]);
-    const detections = audio.detectSilences(audioInput, recipe.cutSilence);
+  function analysisFromDetections(audioInput, recipe, detections) {
     const durationSeconds = audioInput.channels[0].length / audioInput.sampleRate;
     const longPauses = detections.filter((range) => range.duration >= recipe.longPauses.thresholdSeconds);
     const ordinarySilences = recipe.longPauses.enabled
@@ -117,6 +114,19 @@
     };
   }
 
+  function analyzeAudio(audioInput, recipe) {
+    const errors = validateRecipe(recipe);
+    if (errors.length) throw new Error(errors[0]);
+    return analysisFromDetections(audioInput, recipe, audio.detectSilences(audioInput, recipe.cutSilence));
+  }
+
+  async function analyzeAudioAsync(audioInput, recipe, onProgress) {
+    const errors = validateRecipe(recipe);
+    if (errors.length) throw new Error(errors[0]);
+    const detections = await audio.detectSilencesAsync(audioInput, recipe.cutSilence, onProgress);
+    return analysisFromDetections(audioInput, recipe, detections);
+  }
+
   function formatDuration(totalSeconds) {
     const seconds = Math.max(0, Math.round(totalSeconds || 0));
     const h = Math.floor(seconds / 3600);
@@ -134,5 +144,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });

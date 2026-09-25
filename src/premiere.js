@@ -1,5 +1,11 @@
-(function (root) {
+(function (root, factory) {
+  const api = factory(root);
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else root.PodCutPremiere = api;
+})(typeof globalThis === "undefined" ? this : globalThis, function (root) {
   "use strict";
+
+  let activeExport = null;
 
   function getApi() {
     try { return require("premierepro"); }
@@ -46,54 +52,176 @@
     };
   }
 
-  function waitForExport(ppro, startExport) {
-    return new Promise((resolve, reject) => {
-      const eventName = ppro.Constants.OperationCompleteEvent.EXPORT_MEDIA_COMPLETE;
-      const timeout = setTimeout(() => finish(new Error("Premiere audio export timed out.")), 10 * 60 * 1000);
-      const onComplete = (event) => {
-        const success = !event || event.state === undefined || event.state === ppro.Constants.OperationCompleteState.SUCCESS;
-        finish(success ? null : new Error("Premiere could not export the sequence audio."));
-      };
-      function finish(error) {
-        clearTimeout(timeout);
-        ppro.EventManager.removeGlobalEventListener(eventName, onComplete);
-        if (error) reject(error); else resolve();
-      }
-      ppro.EventManager.addGlobalEventListener(eventName, onComplete);
-      Promise.resolve().then(startExport).then((started) => {
-        if (!started) finish(new Error("Premiere did not start the sequence audio export."));
-      }, finish);
-    });
+  function resolvePresetPath(applicationPath) {
+    const separator = applicationPath.includes("\\") ? "\\" : "/";
+    const appFolder = applicationPath.replace(/[\\/][^\\/]+$/, "");
+    return `${appFolder}${separator}MediaIO${separator}systempresets${separator}3F3F3F3F_57415645${separator}Waveform Audio 48kHz 16-bit.epr`;
   }
 
-  async function sequenceAudio(sequence) {
+  function createExportWaiter(options) {
+    const state = { promise: "pending", event: "pending", output: "not checked" };
+    let settled = false;
+    let polling = false;
+    let pollTimer;
+    let timeoutTimer;
+    let resolveResult;
+    let rejectResult;
+    const report = () => options.onStatus && options.onStatus({ ...state });
+
+    const promise = new Promise((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
+    function cleanup() {
+      clearTimeout(pollTimer);
+      clearTimeout(timeoutTimer);
+      options.removeListener(options.eventName, onComplete);
+    }
+    function finish(error, value) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) rejectResult(error); else resolveResult(value);
+    }
+    function scheduleInspect(delay) {
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(inspect, delay);
+    }
+    async function inspect() {
+      if (settled || polling) return;
+      polling = true;
+      try {
+        const output = await options.inspectOutput();
+        state.output = output.detail;
+        report();
+        if (output.ready && state.promise === "resolved true") finish(null, output.value);
+      } catch (error) {
+        state.output = `read error: ${error.message}`;
+        report();
+      } finally {
+        polling = false;
+        if (!settled) scheduleInspect(options.pollMs || 1000);
+      }
+    }
+    function onComplete(event) {
+      if (settled) return;
+      state.event = event && event.state !== undefined ? `received (state ${event.state})` : "received";
+      report();
+      scheduleInspect(0);
+    }
+    function stop() {
+      const error = new Error("Stopped waiting. Premiere export was not cancelled; do not retry until any export activity has ended.");
+      error.code = "STOPPED_WAITING";
+      finish(error);
+    }
+
+    options.addListener(options.eventName, onComplete);
+    report();
+    Promise.resolve().then(options.startExport).then((started) => {
+      state.promise = `resolved ${started}`;
+      report();
+      if (!started) {
+        const error = new Error("Premiere rejected the sequence audio export before it started.");
+        error.code = "EXPORT_NOT_STARTED";
+        finish(error);
+      } else scheduleInspect(0);
+    }, (cause) => {
+      state.promise = `rejected: ${cause && cause.message ? cause.message : cause}`;
+      report();
+      const error = new Error(`Premiere sequence audio export failed: ${cause && cause.message ? cause.message : cause}`);
+      error.code = "EXPORT_REJECTED";
+      finish(error);
+    });
+    scheduleInspect(options.pollMs || 1000);
+    timeoutTimer = setTimeout(() => {
+      const error = new Error(`Premiere audio export timed out. Promise: ${state.promise}; event: ${state.event}; output: ${state.output}.`);
+      error.code = "EXPORT_TIMEOUT";
+      finish(error);
+    }, options.timeoutMs || 10 * 60 * 1000);
+    return { promise, state, stop };
+  }
+
+  async function sequenceAudio(sequence, onStatus) {
     const ppro = getApi();
     if (!ppro) throw new Error("Premiere is unavailable.");
+    if (activeExport) throw new Error("An export is already active. Wait for it to finish before trying again.");
     const uxp = require("uxp");
     const fs = require("fs");
     const temp = await uxp.storage.localFileSystem.getTemporaryFolder();
-    const name = `podcut-${Date.now()}.wav`;
+    const operationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const name = `podcut-${operationId}.wav`;
     const separator = temp.nativePath.includes("\\") ? "\\" : "/";
     const outputPath = `${temp.nativePath}${separator}${name}`;
     const appPath = uxp.host && uxp.host.applicationPath;
     if (!appPath) throw new Error("Premiere 26.5 or later is required for sequence audio analysis.");
-    const appFolder = appPath.replace(/[\\/][^\\/]+$/, "");
-    // ponytail: use Premiere's bundled WAV preset; add a preset picker if other hosts move it.
-    const presetPath = `${appFolder}${separator}MediaIO${separator}systempresets${separator}3F3F3F3F_57415645${separator}Waveform Audio 48kHz 16-bit.epr`;
+    const presetPath = resolvePresetPath(appPath);
     const encoder = ppro.EncoderManager.getManager();
+    const expectedDuration = (await sequence.getEndTime()).seconds;
+    const startedAt = Date.now();
+    const diagnostics = [];
+    let lastSize = -1;
+    let unchanged = 0;
+    let lastWaitStatus = "";
+    const log = (stage, detail) => {
+      const entry = { operationId, elapsedMs: Date.now() - startedAt, stage, detail };
+      diagnostics.push(entry);
+      console.info("PodCut export", JSON.stringify(entry));
+      if (onStatus) onStatus({ stage, detail, elapsedMs: entry.elapsedMs, diagnostics });
+    };
+
+    log("preparing", { premiere: uxp.host.version, sequence: sequence.name, durationSeconds: expectedDuration, applicationPath: appPath, presetPath, tempPath: temp.nativePath, outputPath });
+    let extension;
     try {
-      await waitForExport(ppro, () => encoder.exportSequence(
-        sequence,
-        ppro.Constants.ExportType.IMMEDIATELY,
-        outputPath,
-        presetPath,
-        true
-      ));
-      return await fs.readFile(`plugin-temp:/${name}`);
+      extension = await ppro.EncoderManager.getExportFileExtension(sequence, presetPath);
+      log("preset", { extension });
+    } catch (cause) {
+      throw new Error(`Premiere could not read the WAV export preset: ${cause.message || cause}`);
+    }
+
+    const fileUrl = `plugin-temp:/${name}`;
+    const waiter = createExportWaiter({
+      eventName: ppro.Constants.OperationCompleteEvent.EXPORT_MEDIA_COMPLETE,
+      addListener: (eventName, handler) => ppro.EventManager.addGlobalEventListener(eventName, handler),
+      removeListener: (eventName, handler) => ppro.EventManager.removeGlobalEventListener(eventName, handler),
+      startExport: () => {
+        log("exporting", { exportType: ppro.Constants.ExportType.IMMEDIATELY, outputPath, presetPath, exportFull: true });
+        return encoder.exportSequence(sequence, ppro.Constants.ExportType.IMMEDIATELY, outputPath, presetPath, true);
+      },
+      inspectOutput: async () => {
+        let stat;
+        try { stat = await fs.lstat(fileUrl); }
+        catch (error) { return { ready: false, detail: "missing" }; }
+        unchanged = stat.size === lastSize ? unchanged + 1 : 0;
+        lastSize = stat.size;
+        if (stat.size < 44 || unchanged < 1) return { ready: false, detail: `${stat.size} bytes, still changing` };
+        const buffer = await fs.readFile(fileUrl);
+        const info = root.PodCutAudio.wavInfo(buffer);
+        if (Math.abs(info.durationSeconds - expectedDuration) > 0.5) return { ready: false, detail: `${stat.size} bytes, duration ${info.durationSeconds.toFixed(2)}s (expected ${expectedDuration.toFixed(2)}s)` };
+        return { ready: true, detail: `${stat.size} bytes, ${info.channels}ch ${info.sampleRate}Hz ${info.bitsPerSample}-bit, ${info.durationSeconds.toFixed(2)}s`, value: buffer };
+      },
+      onStatus: (state) => {
+        const serialized = JSON.stringify(state);
+        if (serialized !== lastWaitStatus) {
+          lastWaitStatus = serialized;
+          log("waiting", state);
+        }
+      }
+    });
+    activeExport = waiter;
+    try {
+      const buffer = await waiter.promise;
+      log("ready", { bytes: buffer.byteLength, extension });
+      try { await fs.unlink(fileUrl); } catch (error) { log("cleanup", { error: error.message || String(error) }); }
+      return buffer;
+    } catch (error) {
+      error.diagnostics = diagnostics;
+      error.outputPath = outputPath;
+      throw error;
     } finally {
-      try { await fs.unlink(`plugin-temp:/${name}`); } catch (error) { /* temporary output may not exist */ }
+      activeExport = null;
     }
   }
 
-  root.PodCutPremiere = { activeSequence, sequenceAudio };
-})(typeof globalThis === "undefined" ? this : globalThis);
+  function stopWaiting() {
+    if (activeExport) activeExport.stop();
+  }
+
+  return { activeSequence, createExportWaiter, resolvePresetPath, sequenceAudio, stopWaiting };
+});
