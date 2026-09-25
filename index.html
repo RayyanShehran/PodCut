@@ -13,9 +13,9 @@
           <div><h1>PodCut</h1><span class="pill">Review only</span></div>
           <p>Find quiet sections before making an edit.</p>
         </div>
-        <button id="refreshSequence" class="icon-button" title="Refresh sequence" aria-label="Refresh active sequence">
-          <img src="src/icons/refresh.svg" alt="" aria-hidden="true" />
-        </button>
+        <div id="refreshSequence" class="icon-button" role="button" tabindex="0" title="Refresh sequence" aria-label="Refresh sequence" aria-disabled="false">
+          <img src="src/icons/refresh.png" width="16" height="16" alt="" aria-hidden="true" />
+        </div>
       </header>
 
       <div class="content-scroll">
@@ -48,7 +48,7 @@
             </div>
             <div class="settings" data-settings-for="cutSilence">
               <label><span>Minimum silence</span><span class="value"><input type="number" min="0.1" max="10" step="0.1" data-setting="cutSilence.minimumSeconds" /><span class="unit">s</span></span></label>
-              <button class="disclosure" id="advancedToggle" type="button" aria-expanded="false" aria-controls="advancedSettings"><span>Advanced</span><img src="src/icons/chevron-down.svg" alt="" aria-hidden="true" /></button>
+              <div class="disclosure" id="advancedToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="advancedSettings"><span>Advanced</span><span class="chevron" aria-hidden="true">▾</span></div>
               <div id="advancedSettings" class="advanced" hidden>
                 <label><span>Padding before</span><span class="value"><input type="number" min="0" max="2" step="0.05" data-setting="cutSilence.paddingBefore" /><span class="unit">s</span></span></label>
                 <label><span>Padding after</span><span class="value"><input type="number" min="0" max="2" step="0.05" data-setting="cutSilence.paddingAfter" /><span class="unit">s</span></span></label>
@@ -77,16 +77,16 @@
           <div id="summary" class="summary-grid"></div>
           <h3>Detected edits</h3>
           <div id="decisions" class="decisions"></div>
-          <button id="apply" class="button" disabled>Apply to Timeline</button>
+          <div id="apply" class="button" role="button" tabindex="-1" aria-disabled="true">Apply to Timeline</div>
           <p class="safety">Timeline editing is not available yet.</p>
         </section>
 
         <section class="developer-section">
-          <button class="disclosure section-disclosure" id="developerToggle" type="button" aria-expanded="false" aria-controls="developerPanel"><span>Developer</span><img src="src/icons/chevron-down.svg" alt="" aria-hidden="true" /></button>
+          <div class="disclosure section-disclosure" id="developerToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="developerPanel"><span>Developer</span><span class="chevron" aria-hidden="true">▾</span></div>
           <div id="developerPanel" class="developer-panel" hidden>
             <p>Filler-word removal needs a transcript and is not available.</p>
-            <button id="testAudio" class="button secondary">Analyze generated PCM</button>
-            <button id="toggleDiagnostics" class="text-button" hidden>Show export diagnostics</button>
+            <div id="testAudio" class="button secondary" role="button" tabindex="0" aria-disabled="false">Analyze generated PCM</div>
+            <div id="toggleDiagnostics" class="text-button" role="button" tabindex="0" hidden>Show export diagnostics</div>
             <pre id="diagnosticText" hidden></pre>
           </div>
         </section>
@@ -99,7 +99,7 @@
           <small id="progressDetail"></small>
         </div>
         <div id="message" class="message" hidden></div>
-        <button id="analyze" class="button primary" disabled>Analyze Sequence</button>
+        <div id="analyze" class="button primary" role="button" tabindex="-1" aria-disabled="true">Analyze Sequence</div>
       </footer>
     </main>
 

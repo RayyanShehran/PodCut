@@ -59,6 +59,11 @@ for (const viewport of viewports) {
     expect(layout.footerBottom).toBeLessThanOrEqual(viewport.height);
     expect(layout.scrollbarCount).toBe(1);
     expect(errors).toEqual([]);
+    await page.locator(".content-scroll").evaluate((content) => { content.scrollTop = 0; });
+    const scrollBox = await page.locator(".content-scroll").boundingBox();
+    await page.mouse.move(scrollBox.x + Math.min(80, scrollBox.width / 2), scrollBox.y + Math.min(80, scrollBox.height / 2));
+    await page.mouse.wheel(0, 240);
+    await expect.poll(() => page.locator(".content-scroll").evaluate((content) => content.scrollTop)).toBeGreaterThan(0);
     await page.screenshot({ path: testInfo.outputPath(`podcut-${viewport.width}x${viewport.height}.png`) });
   });
 }
@@ -91,7 +96,9 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
   await page.setViewportSize({ width: 320, height: 520 });
   await page.goto(panelUrl);
   await expect(page.locator("#refreshSequence")).toBeEnabled();
-  await expect(page.locator("#refreshSequence img")).toHaveJSProperty("naturalWidth", 16);
+  await expect(page.locator("#refreshSequence img")).toHaveJSProperty("naturalWidth", 32);
+  await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator("#analyze")).toHaveAttribute("tabindex", "-1");
 
   const styles = await page.evaluate(() => {
     const css = (selector) => getComputedStyle(document.querySelector(selector));
@@ -110,7 +117,9 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
       refreshSize: [refresh.width, refresh.height],
       analyze: [analyze.height, analyze.borderRadius, analyze.backgroundColor, analyze.color, analyze.opacity, analyze.fontFamily, analyze.fontSize, analyze.fontWeight],
       developer: [developer.height, developer.backgroundColor, developer.fontFamily, developer.fontSize, developer.fontWeight],
-      progressAnimation: css("#progressFill").animationName
+      progressAnimation: css("#progressFill").animationName,
+      summaryDisplay: css(".summary-grid").display,
+      controlTag: document.querySelector("#developerToggle").tagName
     };
   });
   expect(styles.cardPadding).toBe("16px");
@@ -122,11 +131,16 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
   expect(styles.analyze).toEqual(["36px", "6px", "rgb(0, 0, 0)", "rgb(110, 114, 122)", "1", '"Segoe UI", Arial, sans-serif', "13px", "500"]);
   expect(styles.developer).toEqual(["32px", "rgb(0, 0, 0)", '"Segoe UI", Arial, sans-serif', "12px", "400"]);
   expect(styles.progressAnimation).toBe("none");
+  expect(styles.summaryDisplay).toBe("flex");
+  expect(styles.controlTag).toBe("DIV");
 
   await page.locator("#developerToggle").focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("#developerToggle")).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator("#developerPanel")).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(page.locator("#developerToggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#developerPanel")).toBeHidden();
 
   await page.evaluate(() => {
     window.refreshCalls = 0;
@@ -136,7 +150,7 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
   await page.locator("#refreshSequence").click();
   await expect.poll(() => page.evaluate(() => window.refreshCalls)).toBe(1);
 
-  await page.locator("#analyze").evaluate((button) => { button.disabled = false; });
+  await page.locator("#analyze").evaluate((button) => { button.setAttribute("aria-disabled", "false"); });
   await expect(page.locator("#analyze")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator("#analyze")).toHaveCSS("border-color", "rgb(110, 114, 122)");
 });

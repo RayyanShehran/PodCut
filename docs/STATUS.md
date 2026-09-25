@@ -34,6 +34,8 @@ The original timeout came from relying on the completion-event wait path alone. 
 
 Browser screenshots and Playwright checks cover layout and interaction logic; they do not prove Premiere's UXP renderer matches Chromium.
 
+The September 26 host screenshot showed that Premiere still rendered native HTML buttons as gray pills and did not display the bundled SVG icons. The panel now uses keyboard-accessible button-role controls and a packaged PNG refresh icon. Adobe's Premiere UXP CSS guide also states CSS Grid is unsupported; review layouts now use flex. This correction awaits a fresh UDT reload and live host inspection. UDT's directory watcher has previously failed with `EPERM`, so rebuilding `dist/` alone may not refresh the open panel.
+
 ## Not implemented
 
 - Timeline editing. Apply to Timeline intentionally remains disabled.

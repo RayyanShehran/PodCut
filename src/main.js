@@ -78,6 +78,12 @@
 
   function isCurrent(id) { return id === operationId; }
 
+  function setActionDisabled(selector, disabled) {
+    const control = $(selector);
+    control.setAttribute("aria-disabled", String(Boolean(disabled)));
+    control.tabIndex = disabled ? -1 : 0;
+  }
+
   function clearAnalysis() {
     analysisResult = null;
     reviewSource = null;
@@ -91,15 +97,15 @@
   function syncControls() {
     const busy = analyzing || refreshing;
     $("#preset").disabled = busy;
-    $("#refreshSequence").disabled = busy;
-    $("#testAudio").disabled = busy;
+    setActionDisabled("#refreshSequence", busy);
+    setActionDisabled("#testAudio", busy);
     $$('[data-setting]').forEach((control) => {
       const operation = control.dataset.setting.split(".")[0];
       control.disabled = busy || !recipe[operation].enabled;
     });
     $$('[data-setting$=".enabled"]').forEach((control) => { control.disabled = busy; });
     const ready = sequenceInfo && sequenceInfo.state === "ready" && sequenceInfo.audioTracks > 0;
-    $("#analyze").disabled = analyzing ? !exportWaiting : retryBlocked || refreshing || !ready;
+    setActionDisabled("#analyze", analyzing ? !exportWaiting : retryBlocked || refreshing || !ready);
     $("#analyze").textContent = analyzing ? (exportWaiting ? "Stop waiting" : "Analyzing…") : "Analyze Sequence";
   }
 
@@ -171,7 +177,7 @@
     $("#decisions").innerHTML = result.decisions.length
       ? result.decisions.map((decision) => `<label><input type="checkbox" data-decision-id="${decision.id}" ${decision.enabled ? "checked" : ""} /><span><b>${decision.type === "long-pause" ? "Long pause" : "Silence"}</b><small>${core.formatTimestamp(decision.cutStart)} → ${core.formatTimestamp(decision.cutEnd)}</small></span><strong>Remove ${core.formatDuration(decision.removeSeconds)}</strong></label>`).join("")
       : '<p class="empty">No cuts meet the current recipe settings.</p>';
-    $("#apply").disabled = true;
+    setActionDisabled("#apply", true);
   }
 
   function generatedAudio() {
@@ -296,6 +302,16 @@
   function init() {
     if (initialized) return;
     initialized = true;
+    $$('[role="button"]').forEach((control) => {
+      control.addEventListener("click", (event) => {
+        if (control.getAttribute("aria-disabled") === "true") event.stopImmediatePropagation();
+      });
+      control.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") return;
+        event.preventDefault();
+        if (control.getAttribute("aria-disabled") !== "true") control.click();
+      });
+    });
     Object.entries(core.PRESETS).forEach(([id, preset]) => {
       const option = document.createElement("option");
       option.value = id;
