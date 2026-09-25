@@ -4,16 +4,17 @@ PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors 
 
 ## Current capabilities
 
-- Persistent Premiere UXP panel for Premiere Pro 25.6+
+- Persistent Premiere UXP panel for Premiere Pro 26.5+
 - Active project/sequence detection with duration, track, and clip inventory
 - Independent Cut Silence, Remove Filler Words, and Remove Long Pauses recipe controls
 - Data-driven Natural Podcast, Tight Podcast, YouTube Fast-Paced, and Custom presets
 - Real PCM silence detection and long-pause derivation
+- Temporary Premiere sequence-audio export and 16-bit PCM WAV decoding
 - Reviewable edit decisions with padding, timing, enable/disable controls, and duration estimates
 - Generated PCM development input for exercising the real detector without Premiere
 - Apply action intentionally disabled until Premiere timeline integration is validated
 
-PodCut does **not** yet acquire audio from Premiere, transcribe speech, detect filler words, or modify a timeline. Generated test audio is synthetic input to the real detector; its results are not canned or mocked.
+PodCut can acquire sequence audio from Premiere for analysis, but the host export path still requires real-project validation. It does **not** transcribe speech, detect filler words, or modify a timeline. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
 
 ## Silence analysis
 
@@ -33,7 +34,7 @@ When Cut Silence and Remove Long Pauses are both enabled, long ranges become lon
 ## Requirements
 
 - Windows with Node.js 20 or later (no npm packages are required)
-- Adobe Premiere Pro 25.6 or later
+- Adobe Premiere Pro 26.5 or later
 - Adobe UXP Developer Tool 2.2 or later
 
 ## Build and test
@@ -50,7 +51,7 @@ The build creates `dist/`, the folder to load in UXP Developer Tool. `npm run ch
 
 ## Load locally
 
-1. Install Premiere Pro 25.6+ and UXP Developer Tool 2.2+ from Creative Cloud.
+1. Install Premiere Pro 26.5+ and UXP Developer Tool 2.2+ from Creative Cloud.
 2. Start Premiere and open a project and sequence.
 3. Start UXP Developer Tool as administrator and enable Developer Mode when prompted.
 4. Add a plugin, choose `dist/manifest.json`, then click **Load**.
@@ -72,14 +73,13 @@ Analysis remains separate from timeline operations: PCM input → detected range
 
 ## Host integration and limitations
 
-The adapter uses documented Premiere UXP 25.6 APIs: `Project.getActiveProject()`, `project.getActiveSequence()`, sequence duration/track access, and track-item enumeration. Premiere audio acquisition/export is not connected to the detector yet. Premiere also exposes sequence clone actions, undoable project transactions, and remove-item actions, but applying time-range edits safely requires mapping detections to linked audio/video track items. That work is intentionally not guessed or enabled in this build.
+The adapter uses documented Premiere UXP APIs for active-sequence inspection and immediate sequence export. Audio is rendered to the plugin's temporary folder using Premiere's bundled 48 kHz/16-bit WAV preset, decoded, analyzed, and removed. The current preset lookup targets Premiere's Windows installation layout and still needs host validation. Applying time-range edits safely requires mapping detections to linked audio/video track items, so timeline mutation remains disabled.
 
-This machine did not have Premiere Pro or UXP Developer Tool installed, so loading, layout, and DOM behavior still require validation in the host. See [docs/STATUS.md](docs/STATUS.md).
+The panel, lifecycle, layout, and active-sequence reads have been validated in Premiere Pro 26.5. See [docs/STATUS.md](docs/STATUS.md).
 
 ## Roadmap
 
-1. Validate the panel and DOM adapter in Premiere Pro 25.6+.
-2. Connect Premiere sequence audio acquisition/export to the existing PCM analysis boundary.
-3. Validate detections against real podcast recordings and add calibration only if measurements require it.
-4. Safely apply reviewed decisions to a cloned sequence in one undoable transaction.
-5. Add a provider-independent word-timestamp transcription boundary for context-aware filler-word detection.
+1. Validate Premiere sequence audio export and PCM analysis against real projects.
+2. Calibrate thresholds only if measured results require it.
+3. Safely apply reviewed decisions to a cloned sequence in one undoable transaction.
+4. Add a provider-independent word-timestamp transcription boundary for context-aware filler-word detection.

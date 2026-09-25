@@ -21,6 +21,52 @@
     return sumSquares ? 20 * Math.log10(Math.sqrt(sumSquares / count)) : -Infinity;
   }
 
+  function decodeWav(buffer) {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 44) throw new Error("Invalid WAV file.");
+    const view = new DataView(buffer);
+    const text = (offset) => String.fromCharCode(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3));
+    if (text(0) !== "RIFF" || text(8) !== "WAVE") throw new Error("Invalid WAV file.");
+
+    let format;
+    let dataOffset;
+    let dataSize;
+    for (let offset = 12; offset + 8 <= buffer.byteLength;) {
+      const id = text(offset);
+      const size = view.getUint32(offset + 4, true);
+      const content = offset + 8;
+      if (content + size > buffer.byteLength) throw new Error("Invalid WAV chunk size.");
+      if (id === "fmt ") {
+        if (size < 16) throw new Error("Invalid WAV format chunk.");
+        format = {
+          type: view.getUint16(content, true),
+          channels: view.getUint16(content + 2, true),
+          sampleRate: view.getUint32(content + 4, true),
+          blockAlign: view.getUint16(content + 12, true),
+          bitsPerSample: view.getUint16(content + 14, true)
+        };
+      } else if (id === "data") {
+        dataOffset = content;
+        dataSize = size;
+      }
+      offset = content + size + (size % 2);
+    }
+    if (!format || dataOffset === undefined) throw new Error("WAV format or data chunk is missing.");
+    if (format.type !== 1 || format.bitsPerSample !== 16) throw new Error("PodCut currently supports 16-bit PCM WAV audio.");
+    if (!format.channels || !format.sampleRate || format.blockAlign !== format.channels * 2 || dataSize % format.blockAlign) throw new Error("Invalid PCM WAV format.");
+
+    const sampleCount = dataSize / format.blockAlign;
+    const samples = new Float32Array(sampleCount);
+    for (let sample = 0; sample < sampleCount; sample += 1) {
+      let sumSquares = 0;
+      for (let channel = 0; channel < format.channels; channel += 1) {
+        const value = view.getInt16(dataOffset + sample * format.blockAlign + channel * 2, true) / 32768;
+        sumSquares += value * value;
+      }
+      samples[sample] = Math.sqrt(sumSquares / format.channels);
+    }
+    return { sampleRate: format.sampleRate, channels: [samples] };
+  }
+
   function detectSilences(audio, settings) {
     validate(audio, settings);
     const thresholdDbfs = settings.thresholdDbfs ?? STYLE_THRESHOLDS_DBFS[settings.style];
@@ -70,5 +116,5 @@
     });
   }
 
-  return { STYLE_THRESHOLDS_DBFS, FRAME_SECONDS, detectSilences };
+  return { STYLE_THRESHOLDS_DBFS, FRAME_SECONDS, decodeWav, detectSilences };
 });

@@ -39,7 +39,7 @@
   }
 
   function setBusy(value) {
-    $("#analyze").disabled = true;
+    $("#analyze").disabled = value || !sequenceInfo || sequenceInfo.state !== "ready" || sequenceInfo.audioTracks === 0;
     $("#testAudio").disabled = value;
     $("#refreshSequence").disabled = value;
   }
@@ -64,7 +64,7 @@
       message(ready
         ? sequenceInfo.audioTracks === 0
           ? "This sequence has no audio tracks to analyze."
-          : "Sequence audio acquisition is not connected yet. Use generated test audio to exercise the real detector."
+          : "Ready to analyze the active sequence. Premiere will render temporary audio without changing the timeline."
         : "", "warning");
     } catch (error) {
       sequenceInfo = { state: "error" };
@@ -118,9 +118,32 @@
     try {
       await Promise.resolve();
       renderReview(core.analyzeAudio(generatedAudio(), recipe));
+      $("#reviewLabel").textContent = "GENERATED PCM";
       message("Real RMS analysis completed against generated PCM. No Premiere media or demo result counts were used.", "");
     } finally {
       $("#testAudio").textContent = "Analyze Generated Test Audio";
+      setBusy(false);
+    }
+  }
+
+  async function analyzeSequence() {
+    const errors = core.validateRecipe(recipe);
+    if (errors.length) return message(errors[0], "error");
+    setBusy(true);
+    $("#analyze").textContent = "Exporting audio…";
+    message("Premiere is rendering temporary sequence audio for analysis. The timeline remains unchanged.", "");
+    try {
+      const wav = await host.sequenceAudio(sequenceInfo.sequence);
+      $("#analyze").textContent = "Analyzing…";
+      await Promise.resolve();
+      renderReview(core.analyzeAudio(globalThis.PodCutAudio.decodeWav(wav), recipe));
+      $("#reviewLabel").textContent = "PREMIERE SEQUENCE";
+      message("Sequence audio analysis complete. Review only; Apply to Timeline remains disabled.", "");
+    } catch (error) {
+      console.error("PodCut sequence analysis failed", error);
+      message(error.message || "Sequence audio analysis failed. See the developer console for details.", "error");
+    } finally {
+      $("#analyze").textContent = "Analyze Sequence";
       setBusy(false);
     }
   }
@@ -160,6 +183,7 @@
       }
     });
     $("#refreshSequence").addEventListener("click", refreshSequence);
+    $("#analyze").addEventListener("click", analyzeSequence);
     $("#testAudio").addEventListener("click", analyzeTestAudio);
     renderRecipe();
     refreshSequence();
