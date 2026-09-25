@@ -13,7 +13,7 @@
     const keys = path.split(".");
     let target = recipe;
     keys.slice(0, -1).forEach((key) => { target = target[key]; });
-    target[keys.at(-1)] = value;
+    target[keys[keys.length - 1]] = value;
   }
 
   function message(text, kind) {
@@ -126,8 +126,16 @@
   }
 
   function init() {
-    Object.entries(core.PRESETS).forEach(([id, preset]) => $("#preset").append(new Option(preset.label, id)));
-    $("#preset").append(new Option("Custom", "custom"));
+    Object.entries(core.PRESETS).forEach(([id, preset]) => {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = preset.label;
+      $("#preset").appendChild(option);
+    });
+    const custom = document.createElement("option");
+    custom.value = "custom";
+    custom.textContent = "Custom";
+    $("#preset").appendChild(custom);
     $("#preset").value = "natural";
     $("#preset").addEventListener("change", (event) => {
       if (event.target.value !== "custom") recipe = core.recipeForPreset(event.target.value);
@@ -159,5 +167,5 @@
     catch (error) { console.info("PodCut running outside UXP; panel lifecycle unavailable."); }
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  init();
 })();
