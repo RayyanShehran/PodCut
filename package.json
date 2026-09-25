@@ -6,6 +6,10 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test",
+    "test:ui": "playwright test",
     "check": "node scripts/check.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

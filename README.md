@@ -45,10 +45,11 @@ Run from the repository root:
 ```powershell
 node scripts/check.mjs
 node --test
+npm run test:ui
 node scripts/build.mjs
 ```
 
-The build creates `dist/`, the folder to load in UXP Developer Tool. `npm run check`, `npm test`, and `npm run build` are equivalent when npm is working.
+The Playwright check captures narrow and wide panel screenshots and verifies scrolling, stacking, and overflow. The build creates `dist/`, the folder to load in UXP Developer Tool.
 
 ## Load locally
 
