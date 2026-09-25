@@ -2,17 +2,33 @@
 
 PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors choose each operation PodCut may perform, review proposed edits, and retain the original media.
 
-## Current foundation
+## Current capabilities
 
 - Persistent Premiere UXP panel for Premiere Pro 25.6+
 - Active project/sequence detection with duration, track, and clip inventory
 - Independent Cut Silence, Remove Filler Words, and Remove Long Pauses recipe controls
 - Data-driven Natural Podcast, Tight Podcast, YouTube Fast-Paced, and Custom presets
-- Validation, range merging, padding, and edit-decision utilities
-- Analysis/review workflow with an explicitly labelled demo preview
-- Apply action intentionally disabled until real detections can be reviewed
+- Real PCM silence detection and long-pause derivation
+- Reviewable edit decisions with padding, timing, enable/disable controls, and duration estimates
+- Generated PCM development input for exercising the real detector without Premiere
+- Apply action intentionally disabled until Premiere timeline integration is validated
 
-PodCut does **not** yet analyze waveforms, transcribe speech, detect filler words, or modify a timeline. The demo review is mock data and is labelled in the UI.
+PodCut does **not** yet acquire audio from Premiere, transcribe speech, detect filler words, or modify a timeline. Generated test audio is synthetic input to the real detector; its results are not canned or mocked.
+
+## Silence analysis
+
+The dependency-free detector accepts planar PCM channels plus a sample rate. It scans 20 ms frames in linear time, combines every channel using RMS, converts the result to dBFS, and joins consecutive silent frames into ranges. Short ranges remain observable but do not become cuts.
+
+The Edit Recipe controls real behavior:
+
+- **Minimum silence** determines which detected ranges may become cuts.
+- **Padding before speech** preserves time before the next spoken section.
+- **Padding after speech** preserves time after the previous spoken section.
+- **Natural / Balanced / Tight** use explicit silence thresholds of `-42 / -38 / -34 dBFS`.
+- **Pause threshold** identifies long pauses from the same detection pass.
+- **Leave natural pause** controls how much of a long pause remains.
+
+When Cut Silence and Remove Long Pauses are both enabled, long ranges become long-pause decisions and shorter qualifying ranges become silence decisions. This prevents duplicate overlapping proposals.
 
 ## Requirements
 
@@ -44,25 +60,26 @@ If Developer Mode must be enabled manually on Windows, create `%CommonProgramFil
 
 ## Architecture
 
-- `src/core.js` — presets, recipe validation, time formatting, and edit-decision logic; runs without Premiere.
+- `src/audio.js` — host-independent PCM validation and RMS/dBFS silence detection.
+- `src/core.js` — presets, recipe validation, analysis orchestration, and edit-decision logic.
 - `src/premiere.js` — thin verified Premiere DOM adapter for active-sequence inspection.
 - `src/main.js` — panel state and interactions.
 - `src/styles.css` — compact Adobe-style panel presentation.
-- `test/core.test.js` — host-independent logic checks.
+- `test/` — generated-audio detector, range, settings, and decision checks.
 - `scripts/` — dependency-free validation and production build.
 
-Analysis remains separate from timeline operations: audio/transcript input → detected ranges → decisions → review → Premiere actions. A future transcript provider should return word-level timestamps without placing API secrets in the extension. Use an authenticated service if a provider requires a secret.
+Analysis remains separate from timeline operations: PCM input → detected ranges → decisions → review → Premiere actions. No audio fixtures or tests are copied into `dist/`. A future transcript provider should return word-level timestamps without placing API secrets in the extension. Use an authenticated service if a provider requires a secret.
 
 ## Host integration and limitations
 
-The adapter uses documented Premiere UXP 25.6 APIs: `Project.getActiveProject()`, `project.getActiveSequence()`, sequence duration/track access, and track-item enumeration. Premiere also exposes sequence clone actions, undoable project transactions, and remove-item actions, but applying time-range edits safely requires mapping detections to linked audio/video track items. That work is intentionally not guessed or enabled in this build.
+The adapter uses documented Premiere UXP 25.6 APIs: `Project.getActiveProject()`, `project.getActiveSequence()`, sequence duration/track access, and track-item enumeration. Premiere audio acquisition/export is not connected to the detector yet. Premiere also exposes sequence clone actions, undoable project transactions, and remove-item actions, but applying time-range edits safely requires mapping detections to linked audio/video track items. That work is intentionally not guessed or enabled in this build.
 
 This machine did not have Premiere Pro or UXP Developer Tool installed, so loading, layout, and DOM behavior still require validation in the host. See [docs/STATUS.md](docs/STATUS.md).
 
 ## Roadmap
 
 1. Validate the panel and DOM adapter in Premiere Pro 25.6+.
-2. Add local audio extraction/reference and real silence detection.
-3. Generate reviewable, per-edit decisions and safely apply them to a cloned sequence in one undoable transaction.
-4. Add a provider-independent word-timestamp transcription boundary for context-aware filler-word detection.
-5. Add multicam, speaker switching, captions, punch-ins, highlights, and clip generation only as validated needs emerge.
+2. Connect Premiere sequence audio acquisition/export to the existing PCM analysis boundary.
+3. Validate detections against real podcast recordings and add calibration only if measurements require it.
+4. Safely apply reviewed decisions to a cloned sequence in one undoable transaction.
+5. Add a provider-independent word-timestamp transcription boundary for context-aware filler-word detection.
