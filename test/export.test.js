@@ -4,7 +4,7 @@ const { claimExport, createExportWaiter, releaseExport, resolvePresetPath } = re
 
 const delay = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function waiter(startExport, inspectOutput = async () => ({ ready: false, detail: "missing" })) {
+function waiter(startExport, inspectOutput = async () => ({ ready: false, detail: "missing" }), timing = {}) {
   let handler;
   let removed = 0;
   const operation = createExportWaiter({
@@ -13,8 +13,8 @@ function waiter(startExport, inspectOutput = async () => ({ ready: false, detail
     removeListener: () => { removed += 1; },
     startExport,
     inspectOutput,
-    pollMs: 10000,
-    timeoutMs: 10000
+    pollMs: timing.pollMs || 10000,
+    timeoutMs: timing.timeoutMs || 10000
   });
   return { ...operation, event: (value) => handler(value), removed: () => removed };
 }
@@ -53,6 +53,12 @@ test("stopping only stops the wait and cleans the listener", async () => {
   const operation = waiter(() => new Promise(() => {}));
   operation.stop();
   await assert.rejects(operation.promise, /was not cancelled/);
+  assert.equal(operation.removed(), 1);
+});
+
+test("timeout cleans the listener without claiming cancellation", async () => {
+  const operation = waiter(async () => true, undefined, { timeoutMs: 5 });
+  await assert.rejects(operation.promise, /timed out/i);
   assert.equal(operation.removed(), 1);
 });
 

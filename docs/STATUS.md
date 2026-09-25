@@ -1,48 +1,47 @@
 # PodCut status
 
-## Completed
+## Implemented
 
 - Premiere UXP manifest v5 targeting Premiere Pro 26.5+
-- Compact persistent panel UI and generated-audio review workflow
-- Recipe toggles, conditional settings, presets, Custom detection, and validation
-- Active sequence metadata, track, and clip inspection through documented Premiere APIs
-- Temporary sequence WAV export and dependency-free 16-bit PCM decoding
-- Export promise/event/output diagnostics with complete WAV and duration validation
-- Bounded panel scrolling, indeterminate export timing, and measured decode/analysis progress
-- Linear-time, dependency-free PCM silence detection using 20 ms RMS/dBFS frames
-- Stereo/multi-channel RMS combination and explicit Natural/Balanced/Tight thresholds
+- Resend-inspired monochrome panel using Segoe UI/system sans and Consolas fallbacks
+- One bounded content scroller with responsive layouts from 280px through wide floating panels
+- Active sequence metadata, presets, collapsible advanced settings, review decisions, and a collapsed Developer section
+- Recipe and sequence snapshots, review invalidation, obsolete-callback guards, duplicate-operation prevention, and teardown cleanup
+- Honest Preparing → Exporting audio → Decoding → Analyzing → Ready progress
+- Temporary sequence WAV export using Premiere's in-app `IMMEDIATELY` export path
+- Export promise/event/output diagnostics, complete WAV parsing, and duration validation
+- Export locking before asynchronous preparation and explicit stop/timeout recovery
+- Dependency-free 16-bit PCM decoding and 20ms RMS/dBFS silence detection
 - Silence and long-pause decisions with padding, enable/disable state, and duration estimates
-- Generated PCM development analysis connected to the review UI
-- Host-independent range, padding, duration, preset, detector, and decision tests
-- Dependency-free build and manifest checks
+- Generated PCM development analysis connected to the same review UI
+- Timeline mutation remains disabled with accurate review-only wording
 
-## Partially implemented
+## Host validation completed
 
-- Analysis workflow: Premiere audio acquisition is connected; the installed host's export failure still needs controlled validation
-- Non-destructive editing: safe workflow is defined, but timeline mutation remains disabled
+- Premiere Pro 26.5.0 / UXP 9.3.0 loaded the panel and read the active sequence.
+- A 35-second, two-clip test sequence exported to WAV and reached `Sequence audio analysis complete` / `Ready 100%`.
+- The bundled 48kHz 16-bit WAV preset and plugin temporary output worked without Adobe Media Encoder.
+- The timeline remained unchanged and Apply to Timeline stayed disabled.
 
-## Mocked
+The original timeout came from relying on the completion-event wait path alone. The current workflow also polls the unique output, requires the export promise to resolve true, parses a complete WAV, and verifies its duration before analysis or deletion.
 
-- Nothing in the silence-analysis result is mocked. The development button analyzes generated PCM rather than Premiere media.
-- Filler-word results are not generated; transcription remains unavailable.
+## Still requires Premiere validation
 
-## Requires Premiere validation
+- Reload the redesigned panel and confirm mouse-wheel/scrollbar behavior in docked, floating, narrow, and short layouts.
+- Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
+- Validate the reported 5m11s, 29-clip sequence and compare review timestamps with the real audio.
+- Exercise empty, offline, nested, multicam, and unusual sequences.
 
-- Obtaining or rendering sequence audio into the detector's planar PCM input
-- Export promise/event/file ordering in Premiere Pro 26.5
-- Docked, floating, narrow, and short panel scrolling after the layout fix
-- Error behavior for empty, offline, nested, multicam, and unusual sequences
+Browser screenshots and Playwright checks cover layout and interaction logic; they do not prove Premiere's UXP renderer matches Chromium.
 
-## Planned
+## Not implemented
 
-- Cross-platform/custom preset selection if Premiere moves or renames its bundled WAV preset
-- Clone active sequence, rename it with a `— PodCut` suffix where the DOM permits, then apply reviewed edits in an undoable transaction
-- Word-level transcript provider boundary and context-aware filler-word decisions
-- Host integration tests performed manually in Premiere
+- Timeline editing. Apply to Timeline intentionally remains disabled.
+- Transcription or filler-word detection.
+- AI services or provider secrets.
 
 ## Known host/API constraints
 
 - PodCut requires Premiere Pro 26.5+ for `uxp.host.applicationPath` and UXP Developer Tool 2.2+.
-- The DOM can clone sequences and remove selected track items, but PodCut must first build and validate linked-item/ripple semantics before enabling safe automatic cuts.
-- Silence thresholds are sensible speech-editing defaults but still need calibration against real Premiere sequence exports.
-- A distributable extension must not contain transcription-provider secrets.
+- Stop waiting and timeout stop PodCut's listener/polling only; they do not cancel Premiere's host render.
+- The DOM can clone sequences and remove selected track items, but linked-item and ripple semantics must be proven before timeline edits are enabled.
