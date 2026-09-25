@@ -154,3 +154,95 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
   await expect(page.locator("#analyze")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator("#analyze")).toHaveCSS("border-color", "rgb(110, 114, 122)");
 });
+
+test("settings survive reload and reset without restoring results", async ({ page }) => {
+  await page.goto(panelUrl);
+  await page.locator("#preset").selectOption("tight");
+  await page.locator("#advancedToggle").click();
+  await page.locator("#developerToggle").click();
+  await page.locator("#testAudio").click();
+  await expect(page.locator("#review")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("#preset")).toHaveValue("tight");
+  await expect(page.locator("#advancedSettings")).toBeVisible();
+  await expect(page.locator("#developerPanel")).toBeVisible();
+  await expect(page.locator("#review")).toBeHidden();
+  await page.locator("#resetSettings").click();
+  await expect(page.locator("#preset")).toHaveValue("natural");
+  await expect(page.locator("#advancedSettings")).toBeHidden();
+  await page.reload();
+  await expect(page.locator("#preset")).toHaveValue("natural");
+});
+
+test("review filters and bulk actions update counts without replacing rows", async ({ page }) => {
+  await page.goto(panelUrl);
+  await page.locator("#developerToggle").click();
+  await page.locator("#testAudio").click();
+  await expect(page.locator("#review")).toBeVisible();
+  const rows = page.locator(".decision");
+  const total = await rows.count();
+  expect(total).toBeGreaterThan(0);
+  await page.locator("#disableVisible").click();
+  await expect(page.locator("#summary div").nth(1).locator("strong")).toHaveText(`0 / ${total}`);
+  await page.locator('[data-filter="disabled"]').click();
+  await expect(rows.filter({ visible: true })).toHaveCount(total);
+  await page.locator("#enableVisible").click();
+  await expect(page.locator("#summary div").nth(1).locator("strong")).toHaveText(`${total} / ${total}`);
+  await expect(rows.filter({ visible: true })).toHaveCount(0);
+  await page.locator('[data-filter="all"]').click();
+  await expect(rows.filter({ visible: true })).toHaveCount(total);
+  await expect(page.locator(".locate").first()).toHaveAttribute("aria-disabled", "true");
+});
+
+test("show is repeatable; stale sequence blocks review and locate", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.require = (id) => id === "uxp" ? { entrypoints: { setup: (hooks) => { window.panelHooks = hooks.panels.podcutPanel; } } } : null;
+  });
+  await page.goto(panelUrl);
+  await page.evaluate(() => {
+    window.info = { state: "ready", projectId: "p", projectPath: "project.prproj", sequenceId: "s", name: "Test", durationSeconds: 8.2,
+      videoTracks: 1, audioTracks: 1, videoClips: 1, audioClips: 1, sequence: {} };
+    window.moves = [];
+    PodCutPremiere.activeSequence = async () => window.info;
+    PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
+    PodCutPremiere.setPlayerPosition = async (sequence, seconds) => { window.moves.push(seconds); };
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(8200).fill(0))] });
+    for (let i = 0; i < 3; i++) window.panelHooks.show(document.body);
+  });
+  await expect(page.locator("#app")).toHaveCount(1);
+  await expect(page.locator("#preset option")).toHaveCount(4);
+  await expect(page.locator("#sequenceName")).toHaveText("Test");
+  await page.locator("#analyze").click();
+  await expect(page.locator("#review")).toBeVisible();
+  await page.locator(".locate").first().click();
+  expect(await page.evaluate(() => window.moves.length)).toBe(1);
+  await page.evaluate(() => { window.info = { ...window.info, audioClips: 2 }; });
+  await page.locator("#refreshSequence").click();
+  await expect(page.locator("#review")).toBeHidden();
+  await expect(page.locator("#message")).toContainText("Analyze again");
+});
+
+test("show during export leaves one job running and keeps its progress", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.require = (id) => id === "uxp" ? { entrypoints: { setup: (hooks) => { window.panelHooks = hooks.panels.podcutPanel; } } } : null;
+  });
+  await page.goto(panelUrl);
+  await page.evaluate(() => {
+    window.info = { state: "ready", projectId: "p", projectPath: "project.prproj", sequenceId: "s", name: "Test", durationSeconds: 8,
+      videoTracks: 1, audioTracks: 1, videoClips: 1, audioClips: 1, sequence: {} };
+    window.exports = 0;
+    PodCutPremiere.activeSequence = async () => window.info;
+    PodCutPremiere.sequenceAudio = () => { window.exports += 1; return new Promise((resolveExport) => { window.finishExport = resolveExport; }); };
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(8000).fill(0))] });
+    window.panelHooks.show(document.body);
+  });
+  await expect(page.locator("#sequenceName")).toHaveText("Test");
+  await page.locator("#analyze").click();
+  await expect(page.locator("#progressStage")).toHaveText("Preparing");
+  await page.evaluate(() => { for (let i = 0; i < 3; i++) window.panelHooks.show(document.body); });
+  expect(await page.evaluate(() => window.exports)).toBe(1);
+  await expect(page.locator("#analyze")).toHaveText("Stop waiting");
+  await page.evaluate(() => window.finishExport(new ArrayBuffer(0)));
+  await expect(page.locator("#progressStage")).toHaveText("Ready");
+  expect(await page.evaluate(() => window.exports)).toBe(1);
+});

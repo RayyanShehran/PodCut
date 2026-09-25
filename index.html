@@ -14,7 +14,8 @@
           <p>Find quiet sections before making an edit.</p>
         </div>
         <div id="refreshSequence" class="icon-button" role="button" tabindex="0" title="Refresh sequence" aria-label="Refresh sequence" aria-disabled="false">
-          <img src="src/icons/refresh.png" width="16" height="16" alt="" aria-hidden="true" />
+          <img id="refreshIcon" src="src/icons/refresh.png" width="16" height="16" alt="" aria-hidden="true" hidden />
+          <span id="refreshFallback" aria-hidden="true">↻</span>
         </div>
       </header>
 
@@ -75,7 +76,19 @@
             <span id="reviewLabel">Premiere sequence</span>
           </div>
           <div id="summary" class="summary-grid"></div>
+          <p class="review-note">Reanalyze after timeline edits; some clip or effect changes cannot be detected automatically.</p>
           <h3>Detected edits</h3>
+          <div class="review-tools">
+            <div class="filter-tabs" aria-label="Review filter">
+              <div role="button" tabindex="0" data-filter="all" aria-pressed="true">All</div>
+              <div role="button" tabindex="0" data-filter="enabled" aria-pressed="false">Enabled</div>
+              <div role="button" tabindex="0" data-filter="disabled" aria-pressed="false">Disabled</div>
+            </div>
+            <div class="bulk-actions">
+              <div role="button" tabindex="0" id="enableVisible">Enable shown</div>
+              <div role="button" tabindex="0" id="disableVisible">Disable shown</div>
+            </div>
+          </div>
           <div id="decisions" class="decisions"></div>
           <div id="apply" class="button" role="button" tabindex="-1" aria-disabled="true">Apply to Timeline</div>
           <p class="safety">Timeline editing is not available yet.</p>
@@ -88,6 +101,7 @@
             <div id="testAudio" class="button secondary" role="button" tabindex="0" aria-disabled="false">Analyze generated PCM</div>
             <div id="toggleDiagnostics" class="text-button" role="button" tabindex="0" hidden>Show export diagnostics</div>
             <pre id="diagnosticText" hidden></pre>
+            <div id="resetSettings" class="text-button" role="button" tabindex="0">Reset settings</div>
           </div>
         </section>
       </div>

@@ -32,6 +32,44 @@
   function sameRecipe(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
   function matchingPreset(recipe) { return Object.keys(PRESETS).find((id) => sameRecipe(recipe, PRESETS[id].recipe)) || "custom"; }
 
+  function readSettings(raw) {
+    const defaults = { recipe: recipeForPreset("natural"), preset: "natural", advanced: false, developer: false };
+    try {
+      const saved = JSON.parse(raw);
+      if (!saved || saved.version !== 1 || !saved.recipe || ![...Object.keys(PRESETS), "custom"].includes(saved.preset) ||
+          typeof saved.advanced !== "boolean" || typeof saved.developer !== "boolean") return defaults;
+      const r = saved.recipe;
+      for (const [group, fields] of Object.entries(defaults.recipe)) {
+        if (!r[group]) return defaults;
+        for (const [key, value] of Object.entries(fields)) if (typeof r[group][key] !== typeof value) return defaults;
+      }
+      if (validateRecipe(r).length || (saved.preset !== "custom" && !sameRecipe(r, recipeForPreset(saved.preset)))) return defaults;
+      return { recipe: r, preset: saved.preset, advanced: saved.advanced, developer: saved.developer };
+    } catch (error) { return defaults; }
+  }
+
+  function sequenceKey(info) {
+    return info && info.state === "ready"
+      ? [info.projectId, info.projectPath, info.sequenceId, info.name, info.durationSeconds, info.videoTracks, info.audioTracks, info.videoClips, info.audioClips].join("|")
+      : info && info.state;
+  }
+
+  function reviewTotals(result) {
+    const enabled = result.decisions.filter((decision) => decision.enabled);
+    const removed = enabled.reduce((total, decision) => total + decision.removeSeconds, 0);
+    return { enabled: enabled.length, removed, edited: Math.max(0, result.durationSeconds - removed) };
+  }
+
+  function filteredDecisions(result, filter) {
+    return result.decisions.filter((decision) => filter === "all" || decision.enabled === (filter === "enabled"));
+  }
+
+  function locateSeconds(source, currentInfo, decision, recipe) {
+    if (!source || source.key === "generated" || source.recipe !== JSON.stringify(recipe) || source.key !== sequenceKey(currentInfo) ||
+        !decision || !Number.isFinite(decision.cutStart) || decision.cutStart < 0 || decision.cutStart > currentInfo.durationSeconds) return null;
+    return decision.cutStart;
+  }
+
   function validateRecipe(recipe) {
     const errors = [];
     const finite = (value, min, max, label) => {
@@ -144,5 +182,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });

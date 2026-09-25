@@ -67,6 +67,9 @@
       state: "ready",
       project,
       sequence,
+      projectId: project.guid.toString(),
+      projectPath: project.path,
+      sequenceId: sequence.guid.toString(),
       name: sequence.name,
       durationSeconds: end.seconds,
       videoTracks,
@@ -254,5 +257,12 @@
     if (activeExport) activeExport.stop();
   }
 
-  return { activeSequence, claimExport, createExportWaiter, releaseExport, resolvePresetPath, sequenceAudio, stopWaiting };
+  async function setPlayerPosition(sequence, seconds) {
+    const ppro = getApi();
+    if (!ppro || !sequence || !Number.isFinite(seconds) || seconds < 0) throw new Error("Cannot locate this decision in Premiere.");
+    const moved = await sequence.setPlayerPosition(ppro.TickTime.createWithSeconds(seconds));
+    if (!moved) throw new Error("Premiere did not move the sequence playhead.");
+  }
+
+  return { activeSequence, claimExport, createExportWaiter, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
 });

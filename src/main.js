@@ -17,12 +17,33 @@
   let refreshId = 0;
   let elapsedTimer = null;
   let initialized = false;
+  let reviewFilter = "all";
+  const settingsKey = "podcut.settings.v1";
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const getPath = (path) => path.split(".").reduce((value, key) => value[key], recipe);
-  const sequenceKey = (info) => info && info.state === "ready"
-    ? [info.name, info.durationSeconds, info.videoTracks, info.audioTracks, info.videoClips, info.audioClips].join("|")
-    : info && info.state;
+  const sequenceKey = core.sequenceKey;
+
+  function saveSettings() {
+    if (core.validateRecipe(recipe).length) return;
+    try {
+      localStorage.setItem(settingsKey, JSON.stringify({ version: 1, recipe, preset: $("#preset").value,
+        advanced: $("#advancedToggle").getAttribute("aria-expanded") === "true",
+        developer: $("#developerToggle").getAttribute("aria-expanded") === "true" }));
+    } catch (error) { console.warn("PodCut could not save settings", error); }
+  }
+
+  function restoreSettings() {
+    let raw = null;
+    try { raw = localStorage.getItem(settingsKey); } catch (error) { console.warn("PodCut could not read settings", error); }
+    const saved = core.readSettings(raw);
+    recipe = saved.recipe;
+    $("#preset").value = saved.preset;
+    for (const [id, expanded] of [["advanced", saved.advanced], ["developer", saved.developer]]) {
+      $(`#${id}Toggle`).setAttribute("aria-expanded", String(expanded));
+      $(`#${id === "advanced" ? "advancedSettings" : "developerPanel"}`).hidden = !expanded;
+    }
+  }
 
   function setPath(path, value) {
     const keys = path.split(".");
@@ -91,7 +112,12 @@
   }
 
   function invalidateForRecipe() {
-    if (reviewSource && reviewSource.recipe !== JSON.stringify(recipe)) clearAnalysis();
+    if (reviewSource && reviewSource.recipe !== JSON.stringify(recipe)) {
+      clearAnalysis();
+      message("Recipe changed. Analyze again to refresh the review.", "warning");
+      return true;
+    }
+    return false;
   }
 
   function syncControls() {
@@ -99,6 +125,7 @@
     $("#preset").disabled = busy;
     setActionDisabled("#refreshSequence", busy);
     setActionDisabled("#testAudio", busy);
+    setActionDisabled("#resetSettings", busy);
     $$('[data-setting]').forEach((control) => {
       const operation = control.dataset.setting.split(".")[0];
       control.disabled = busy || !recipe[operation].enabled;
@@ -133,7 +160,8 @@
     try {
       const next = await host.activeSequence();
       if (id !== refreshId || analyzing) return;
-      if (sequenceInfo && (sequenceInfo.sequence !== next.sequence || sequenceKey(sequenceInfo) !== sequenceKey(next))) clearAnalysis();
+      const stale = reviewSource && reviewSource.key !== "generated" && reviewSource.key !== sequenceKey(next);
+      if (stale) clearAnalysis();
       sequenceInfo = next;
       const ready = next.state === "ready";
       $("#sequenceDot").classList.toggle("ready", ready);
@@ -142,7 +170,9 @@
         ? `${core.formatDuration(next.durationSeconds)} · ${next.videoTracks}V / ${next.audioTracks}A · ${next.videoClips + next.audioClips} clips`
         : next.message;
       if (manual && retryBlocked) retryBlocked = false;
-      message(ready && next.audioTracks === 0 ? "This sequence has no audio tracks to analyze." : "", "warning");
+      if (stale) message("Active sequence or available metadata changed. Analyze again.", "warning");
+      else if (ready && next.audioTracks === 0) message("This sequence has no audio tracks to analyze.", "warning");
+      else if (!analysisResult) message("", "");
     } catch (error) {
       if (id !== refreshId) return;
       sequenceInfo = { state: "error" };
@@ -157,16 +187,30 @@
     }
   }
 
-  function removedSeconds() {
-    return analysisResult.decisions.filter((decision) => decision.enabled).reduce((total, decision) => total + decision.removeSeconds, 0);
+  function renderSummary() {
+    const totals = core.reviewTotals(analysisResult);
+    $("#summary").innerHTML = [
+      ["Silences", analysisResult.silenceCount], ["Enabled / total", `${totals.enabled} / ${analysisResult.decisions.length}`], ["Long pauses", analysisResult.longPauseCount],
+      ["Estimated removed", core.formatDuration(totals.removed)], ["Original", core.formatDuration(analysisResult.durationSeconds)], ["Estimated edited", core.formatDuration(totals.edited)]
+    ].map(([label, value]) => `<div><strong>${value}</strong><span>${label}</span></div>`).join("");
   }
 
-  function renderSummary() {
-    const removed = removedSeconds();
-    $("#summary").innerHTML = [
-      ["Silences", analysisResult.silenceCount], ["Proposed cuts", analysisResult.decisions.length], ["Long pauses", analysisResult.longPauseCount],
-      ["Estimated removed", core.formatDuration(removed)], ["Original", core.formatDuration(analysisResult.durationSeconds)], ["Estimated edited", core.formatDuration(analysisResult.durationSeconds - removed)]
-    ].map(([label, value]) => `<div><strong>${value}</strong><span>${label}</span></div>`).join("");
+  function renderFilter() {
+    $$('[data-filter]').forEach((control) => control.setAttribute("aria-pressed", String(control.dataset.filter === reviewFilter)));
+    $$("#decisions .decision").forEach((row) => {
+      const enabled = row.querySelector('input[type="checkbox"]').checked;
+      row.hidden = reviewFilter !== "all" && enabled !== (reviewFilter === "enabled");
+    });
+  }
+
+  function setVisibleDecisions(enabled) {
+    if (!analysisResult) return;
+    const visible = core.filteredDecisions(analysisResult, reviewFilter);
+    visible.forEach((decision) => { decision.enabled = enabled; });
+    const byId = new Map(analysisResult.decisions.map((decision) => [decision.id, decision]));
+    $$("#decisions .decision").forEach((row) => { row.querySelector('input[type="checkbox"]').checked = byId.get(row.dataset.id).enabled; });
+    renderSummary();
+    renderFilter();
   }
 
   function renderReview(result, source) {
@@ -175,8 +219,9 @@
     $("#review").hidden = false;
     renderSummary();
     $("#decisions").innerHTML = result.decisions.length
-      ? result.decisions.map((decision) => `<label><input type="checkbox" data-decision-id="${decision.id}" ${decision.enabled ? "checked" : ""} /><span><b>${decision.type === "long-pause" ? "Long pause" : "Silence"}</b><small>${core.formatTimestamp(decision.cutStart)} → ${core.formatTimestamp(decision.cutEnd)}</small></span><strong>Remove ${core.formatDuration(decision.removeSeconds)}</strong></label>`).join("")
+      ? result.decisions.map((decision) => `<div class="decision" data-id="${decision.id}"><label><input type="checkbox" data-decision-id="${decision.id}" ${decision.enabled ? "checked" : ""} /><span><b>${decision.type === "long-pause" ? "Long pause" : "Silence"}</b><small>${core.formatTimestamp(decision.cutStart)} → ${core.formatTimestamp(decision.cutEnd)}</small></span></label><strong>−${core.formatDuration(decision.removeSeconds)}</strong><div class="locate text-button" role="button" tabindex="${source.key === "generated" ? "-1" : "0"}" aria-disabled="${source.key === "generated"}" data-locate-id="${decision.id}">Locate</div></div>`).join("")
       : '<p class="empty">No cuts meet the current recipe settings.</p>';
+    renderFilter();
     setActionDisabled("#apply", true);
   }
 
@@ -260,6 +305,13 @@
         if (isCurrent(id)) progress("Analyzing", `${done} of ${total} frames`, done, total);
       });
       if (!isCurrent(id)) return;
+      const current = await host.activeSequence();
+      if (!isCurrent(id)) return;
+      if (sequenceKey(current) !== source.key) {
+        sequenceInfo = current;
+        clearAnalysis();
+        throw new Error("The active sequence changed during analysis. Refresh and analyze again.");
+      }
       renderReview(result, source);
       $("#reviewLabel").textContent = "Premiere sequence";
       progress("Ready", "Review the detected edits below", 1, 1);
@@ -287,16 +339,32 @@
     const expanded = button.getAttribute("aria-expanded") === "true";
     button.setAttribute("aria-expanded", String(!expanded));
     panel.hidden = expanded;
+    saveSettings();
   }
 
-  function teardown() {
-    operationId += 1;
-    refreshId += 1;
-    clearTimer();
-    if (exportWaiting) host.stopWaiting();
-    analyzing = false;
-    refreshing = false;
-    exportWaiting = false;
+  function onShow(rootNode) {
+    const app = $("#app");
+    if (rootNode && rootNode.appendChild && rootNode.contains && !rootNode.contains(app)) rootNode.appendChild(app);
+    app.hidden = false;
+    if (!analyzing) refreshSequence(false);
+  }
+
+  async function locateDecision(id) {
+    const decision = analysisResult && analysisResult.decisions.find((item) => item.id === id);
+    if (!decision || !reviewSource || reviewSource.key === "generated") return;
+    try {
+      const current = await host.activeSequence();
+      const seconds = core.locateSeconds(reviewSource, current, decision, recipe);
+      if (seconds === null) {
+        clearAnalysis();
+        message("Review no longer matches the active sequence. Analyze again.", "warning");
+        return;
+      }
+      await host.setPlayerPosition(current.sequence, seconds);
+    } catch (error) {
+      console.error("PodCut locate failed", error);
+      message(error.message || "Could not locate this decision. Refresh the sequence and retry.", "error");
+    }
   }
 
   function init() {
@@ -322,27 +390,45 @@
     custom.value = "custom";
     custom.textContent = "Custom";
     $("#preset").appendChild(custom);
-    $("#preset").value = "natural";
+    restoreSettings();
     $("#preset").addEventListener("change", (event) => {
       if (event.target.value !== "custom") recipe = core.recipeForPreset(event.target.value);
       invalidateForRecipe();
       renderRecipe();
-      message("", "");
+      saveSettings();
     });
     $$('[data-setting]').forEach((input) => input.addEventListener("change", () => {
       const oldValue = getPath(input.dataset.setting);
       const value = input.type === "checkbox" ? input.checked : typeof oldValue === "number" ? Number(input.value) : input.value;
       setPath(input.dataset.setting, value);
       $("#preset").value = core.matchingPreset(recipe);
-      invalidateForRecipe();
+      const stale = invalidateForRecipe();
       renderRecipe();
       const errors = core.validateRecipe(recipe);
-      message(errors[0] || "", errors.length ? "error" : "");
+      if (errors.length) message(errors[0], "error");
+      else if (!stale) message("", "");
+      saveSettings();
     }));
     $("#decisions").addEventListener("change", (event) => {
       const decision = analysisResult && analysisResult.decisions.find((item) => item.id === event.target.dataset.decisionId);
-      if (decision) { decision.enabled = event.target.checked; renderSummary(); }
+      if (decision) { decision.enabled = event.target.checked; renderSummary(); renderFilter(); }
     });
+    $("#decisions").addEventListener("click", (event) => {
+      const control = event.target.closest("[data-locate-id]");
+      if (control && control.getAttribute("aria-disabled") !== "true") locateDecision(control.dataset.locateId);
+    });
+    $("#decisions").addEventListener("keydown", (event) => {
+      if (event.target.dataset.locateId && (event.key === "Enter" || event.key === " " || event.key === "Spacebar")) {
+        event.preventDefault();
+        event.target.click();
+      }
+    });
+    $$('[data-filter]').forEach((control) => control.addEventListener("click", () => {
+      reviewFilter = control.dataset.filter;
+      if (analysisResult) renderFilter();
+    }));
+    $("#enableVisible").addEventListener("click", () => setVisibleDecisions(true));
+    $("#disableVisible").addEventListener("click", () => setVisibleDecisions(false));
     $("#advancedToggle").addEventListener("click", () => toggleDisclosure($("#advancedToggle"), $("#advancedSettings")));
     $("#developerToggle").addEventListener("click", () => toggleDisclosure($("#developerToggle"), $("#developerPanel")));
     $("#refreshSequence").addEventListener("click", () => refreshSequence(true));
@@ -353,9 +439,26 @@
       details.hidden = !details.hidden;
       $("#toggleDiagnostics").textContent = details.hidden ? "Show export diagnostics" : "Hide export diagnostics";
     });
+    $("#resetSettings").addEventListener("click", () => {
+      if (analyzing || refreshing) return;
+      try { localStorage.removeItem(settingsKey); } catch (error) { console.warn("PodCut could not clear settings", error); }
+      recipe = core.recipeForPreset("natural");
+      $("#preset").value = "natural";
+      $("#advancedToggle").setAttribute("aria-expanded", "false");
+      $("#advancedSettings").hidden = true;
+      $("#developerToggle").setAttribute("aria-expanded", "false");
+      $("#developerPanel").hidden = true;
+      invalidateForRecipe();
+      renderRecipe();
+      message("Settings reset to Natural Podcast.", "");
+    });
+    const icon = $("#refreshIcon");
+    icon.addEventListener("load", () => { icon.hidden = false; $("#refreshFallback").hidden = true; });
+    icon.addEventListener("error", () => { icon.hidden = true; $("#refreshFallback").hidden = false; });
+    if (icon.complete && icon.naturalWidth > 0) { icon.hidden = false; $("#refreshFallback").hidden = true; }
     renderRecipe();
     refreshSequence(false);
-    try { require("uxp").entrypoints.setup({ panels: { podcutPanel: { show: () => refreshSequence(false), destroy: teardown } } }); }
+    try { require("uxp").entrypoints.setup({ panels: { podcutPanel: { show: onShow } } }); }
     catch (error) { console.info("PodCut running outside UXP; panel lifecycle unavailable."); }
   }
 
