@@ -49,7 +49,7 @@
 
   function showDiagnostics(entries) {
     if (!entries || !entries.length) return;
-    $("#diagnostics").hidden = false;
+    $("#toggleDiagnostics").hidden = false;
     $("#diagnosticText").textContent = entries.map((entry) => `${entry.elapsedMs}ms ${entry.stage} ${JSON.stringify(entry.detail)}`).join("\n");
   }
 
@@ -168,7 +168,8 @@
     setBusy(true);
     $("#analyze").disabled = false;
     $("#analyze").textContent = "Stop waiting";
-    $("#diagnostics").hidden = true;
+    $("#toggleDiagnostics").hidden = true;
+    $("#diagnosticText").hidden = true;
     const exportStartedAt = Date.now();
     let latestDetail = "Resolving Premiere paths and WAV preset";
     progress("Preparing", latestDetail, undefined, undefined, 0);
@@ -241,6 +242,11 @@
     $("#refreshSequence").addEventListener("click", refreshSequence);
     $("#analyze").addEventListener("click", analyzeSequence);
     $("#testAudio").addEventListener("click", analyzeTestAudio);
+    $("#toggleDiagnostics").addEventListener("click", () => {
+      const details = $("#diagnosticText");
+      details.hidden = !details.hidden;
+      $("#toggleDiagnostics").textContent = details.hidden ? "Show export diagnostics" : "Hide export diagnostics";
+    });
     renderRecipe();
     refreshSequence();
     try { require("uxp").entrypoints.setup({ panels: { podcutPanel: { show: refreshSequence } } }); }
