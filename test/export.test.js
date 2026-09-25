@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createExportWaiter, resolvePresetPath } = require("../src/premiere.js");
+const { claimExport, createExportWaiter, releaseExport, resolvePresetPath } = require("../src/premiere.js");
 
 const delay = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -54,4 +54,13 @@ test("stopping only stops the wait and cleans the listener", async () => {
   operation.stop();
   await assert.rejects(operation.promise, /was not cancelled/);
   assert.equal(operation.removed(), 1);
+});
+
+test("the export lock covers asynchronous preparation", () => {
+  const operation = claimExport();
+  assert.throws(() => claimExport(), /already active/i);
+  operation.stop();
+  releaseExport(operation);
+  const next = claimExport();
+  releaseExport(next);
 });

@@ -7,6 +7,30 @@
 
   let activeExport = null;
 
+  function claimExport() {
+    if (activeExport) throw new Error("An export is already active. Wait for it to finish before trying again.");
+    const operation = {
+      stopped: false,
+      waiter: null,
+      stop() {
+        this.stopped = true;
+        if (this.waiter) this.waiter.stop();
+      }
+    };
+    activeExport = operation;
+    return operation;
+  }
+
+  function releaseExport(operation) {
+    if (activeExport === operation) activeExport = null;
+  }
+
+  function stoppedError() {
+    const error = new Error("Stopped waiting. Premiere export was not cancelled; do not retry until any export activity has ended.");
+    error.code = "STOPPED_WAITING";
+    return error;
+  }
+
   function getApi() {
     try { return require("premierepro"); }
     catch (error) { return null; }
@@ -107,9 +131,7 @@
       scheduleInspect(0);
     }
     function stop() {
-      const error = new Error("Stopped waiting. Premiere export was not cancelled; do not retry until any export activity has ended.");
-      error.code = "STOPPED_WAITING";
-      finish(error);
+      finish(stoppedError());
     }
 
     options.addListener(options.eventName, onComplete);
@@ -141,21 +163,11 @@
   async function sequenceAudio(sequence, onStatus) {
     const ppro = getApi();
     if (!ppro) throw new Error("Premiere is unavailable.");
-    if (activeExport) throw new Error("An export is already active. Wait for it to finish before trying again.");
-    const uxp = require("uxp");
-    const fs = require("fs");
-    const temp = await uxp.storage.localFileSystem.getTemporaryFolder();
+    const operation = claimExport();
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const name = `podcut-${operationId}.wav`;
-    const separator = temp.nativePath.includes("\\") ? "\\" : "/";
-    const outputPath = `${temp.nativePath}${separator}${name}`;
-    const appPath = uxp.host && uxp.host.applicationPath;
-    if (!appPath) throw new Error("Premiere 26.5 or later is required for sequence audio analysis.");
-    const presetPath = resolvePresetPath(appPath);
-    const encoder = ppro.EncoderManager.getManager();
-    const expectedDuration = (await sequence.getEndTime()).seconds;
     const startedAt = Date.now();
     const diagnostics = [];
+    let outputPath;
     let lastSize = -1;
     let unchanged = 0;
     let lastWaitStatus = "";
@@ -166,17 +178,33 @@
       if (onStatus) onStatus({ stage, detail, elapsedMs: entry.elapsedMs, diagnostics });
     };
 
-    log("preparing", { premiere: uxp.host.version, sequence: sequence.name, durationSeconds: expectedDuration, applicationPath: appPath, presetPath, tempPath: temp.nativePath, outputPath });
-    let extension;
     try {
-      extension = await ppro.EncoderManager.getExportFileExtension(sequence, presetPath);
-      log("preset", { extension });
-    } catch (cause) {
-      throw new Error(`Premiere could not read the WAV export preset: ${cause.message || cause}`);
-    }
+      const uxp = require("uxp");
+      const fs = require("fs");
+      const temp = await uxp.storage.localFileSystem.getTemporaryFolder();
+      if (operation.stopped) throw stoppedError();
+      const name = `podcut-${operationId}.wav`;
+      const separator = temp.nativePath.includes("\\") ? "\\" : "/";
+      outputPath = `${temp.nativePath}${separator}${name}`;
+      const appPath = uxp.host && uxp.host.applicationPath;
+      if (!appPath) throw new Error("Premiere 26.5 or later is required for sequence audio analysis.");
+      const presetPath = resolvePresetPath(appPath);
+      const encoder = ppro.EncoderManager.getManager();
+      const expectedDuration = (await sequence.getEndTime()).seconds;
+      if (operation.stopped) throw stoppedError();
+      log("preparing", { premiere: uxp.host.version, sequence: sequence.name, durationSeconds: expectedDuration, applicationPath: appPath, presetPath, tempPath: temp.nativePath, outputPath });
+      let extension;
+      try {
+        extension = await ppro.EncoderManager.getExportFileExtension(sequence, presetPath);
+        log("preset", { extension });
+      } catch (cause) {
+        log("preset", { error: cause.message || String(cause) });
+        throw new Error(`Premiere could not read the WAV export preset: ${cause.message || cause}`);
+      }
+      if (operation.stopped) throw stoppedError();
 
-    const fileUrl = `plugin-temp:/${name}`;
-    const waiter = createExportWaiter({
+      const fileUrl = `plugin-temp:/${name}`;
+      const waiter = createExportWaiter({
       eventName: ppro.Constants.OperationCompleteEvent.EXPORT_MEDIA_COMPLETE,
       addListener: (eventName, handler) => ppro.EventManager.addGlobalEventListener(eventName, handler),
       removeListener: (eventName, handler) => ppro.EventManager.removeGlobalEventListener(eventName, handler),
@@ -187,7 +215,11 @@
       inspectOutput: async () => {
         let stat;
         try { stat = await fs.lstat(fileUrl); }
-        catch (error) { return { ready: false, detail: "missing" }; }
+        catch (error) {
+          const text = `${error && error.code ? error.code : ""} ${error && error.message ? error.message : error}`;
+          if (/ENOENT|not found|no such file/i.test(text)) return { ready: false, detail: "missing" };
+          throw error;
+        }
         unchanged = stat.size === lastSize ? unchanged + 1 : 0;
         lastSize = stat.size;
         if (stat.size < 44 || unchanged < 1) return { ready: false, detail: `${stat.size} bytes, still changing` };
@@ -203,9 +235,8 @@
           log("waiting", state);
         }
       }
-    });
-    activeExport = waiter;
-    try {
+      });
+      operation.waiter = waiter;
       const buffer = await waiter.promise;
       log("ready", { bytes: buffer.byteLength, extension });
       try { await fs.unlink(fileUrl); } catch (error) { log("cleanup", { error: error.message || String(error) }); }
@@ -215,7 +246,7 @@
       error.outputPath = outputPath;
       throw error;
     } finally {
-      activeExport = null;
+      releaseExport(operation);
     }
   }
 
@@ -223,5 +254,5 @@
     if (activeExport) activeExport.stop();
   }
 
-  return { activeSequence, createExportWaiter, resolvePresetPath, sequenceAudio, stopWaiting };
+  return { activeSequence, claimExport, createExportWaiter, releaseExport, resolvePresetPath, sequenceAudio, stopWaiting };
 });
