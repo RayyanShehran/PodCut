@@ -60,7 +60,9 @@ button:disabled { opacity: .42; cursor: default; }
 .summary-grid strong, .summary-grid span { display: block; }
 .summary-grid strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .summary-grid span { margin-top: 3px; color: var(--muted); font-size: 9px; }
-.decisions label { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; min-height: 34px; border-top: 1px solid var(--border); }
-.decisions small { color: var(--muted); }
+.decisions label { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; min-height: 42px; border-top: 1px solid var(--border); }
+.decisions b, .decisions small { display: block; }
+.decisions b { font-size: 11px; }
+.decisions small, .decisions > label > strong { color: var(--muted); font-size: 9px; }
 .empty, .safety { padding: 8px; background: var(--surface); }
 .safety { text-align: center; }

@@ -4,6 +4,7 @@
   const host = globalThis.PodCutPremiere;
   let recipe = core.recipeForPreset("natural");
   let sequenceInfo = null;
+  let analysisResult = null;
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   const getPath = (path) => path.split(".").reduce((value, key) => value[key], recipe);
@@ -38,8 +39,14 @@
   }
 
   function setBusy(value) {
-    $("#analyze").disabled = value || !sequenceInfo || sequenceInfo.state !== "ready";
+    $("#analyze").disabled = true;
+    $("#testAudio").disabled = value;
     $("#refreshSequence").disabled = value;
+  }
+
+  function clearAnalysis() {
+    analysisResult = null;
+    $("#review").hidden = true;
   }
 
   async function refreshSequence() {
@@ -54,7 +61,11 @@
       $("#sequenceMeta").textContent = ready
         ? `${core.formatDuration(sequenceInfo.durationSeconds)} · ${sequenceInfo.videoTracks}V / ${sequenceInfo.audioTracks}A · ${sequenceInfo.videoClips + sequenceInfo.audioClips} clips`
         : sequenceInfo.message;
-      message(ready && sequenceInfo.audioTracks === 0 ? "This sequence has no audio tracks to analyze." : "", "warning");
+      message(ready
+        ? sequenceInfo.audioTracks === 0
+          ? "This sequence has no audio tracks to analyze."
+          : "Sequence audio acquisition is not connected yet. Use generated test audio to exercise the real detector."
+        : "", "warning");
     } catch (error) {
       sequenceInfo = { state: "error" };
       $("#sequenceDot").classList.remove("ready");
@@ -65,45 +76,53 @@
     } finally { setBusy(false); }
   }
 
-  function renderReview(result, demo) {
-    $("#review").hidden = false;
-    $("#reviewLabel").textContent = demo ? "DEMO DATA" : "SEQUENCE INVENTORY";
+  function removedSeconds() {
+    return analysisResult.decisions.filter((decision) => decision.enabled).reduce((total, decision) => total + decision.removeSeconds, 0);
+  }
+
+  function renderSummary() {
+    const removed = removedSeconds();
     $("#summary").innerHTML = [
-      ["Silences", result.silences], ["Filler words", result.fillers], ["Long pauses", result.pauses],
-      ["Estimated removed", core.formatDuration(result.removed)], ["Original", core.formatDuration(result.original)], ["Estimated edited", core.formatDuration(result.original - result.removed)]
+      ["Silences", analysisResult.silenceCount], ["Proposed cuts", analysisResult.decisions.length], ["Long pauses", analysisResult.longPauseCount],
+      ["Estimated removed", core.formatDuration(removed)], ["Original", core.formatDuration(analysisResult.durationSeconds)], ["Estimated edited", core.formatDuration(analysisResult.durationSeconds - removed)]
     ].map(([label, value]) => `<div><strong>${value}</strong><span>${label}</span></div>`).join("");
+  }
+
+  function renderReview(result) {
+    analysisResult = result;
+    $("#review").hidden = false;
+    renderSummary();
     $("#decisions").innerHTML = result.decisions.length
-      ? result.decisions.map((item) => `<label><input type="checkbox" checked disabled /> <span>${item.label}</span><small>${item.time}</small></label>`).join("")
-      : '<p class="empty">No edit decisions were generated. Audio-content and transcript analysis are not implemented yet.</p>';
+      ? result.decisions.map((decision) => `<label><input type="checkbox" data-decision-id="${decision.id}" checked /><span><b>${decision.type === "long-pause" ? "Long pause" : "Silence"}</b><small>${core.formatTimestamp(decision.cutStart)} → ${core.formatTimestamp(decision.cutEnd)}</small></span><strong>Remove ${core.formatDuration(decision.removeSeconds)}</strong></label>`).join("")
+      : '<p class="empty">No cuts meet the current recipe settings.</p>';
     $("#apply").disabled = true;
     $("#review").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function analyze() {
+  function generatedAudio() {
+    const sampleRate = 1000;
+    const segments = [
+      [0.6, 0.2], [1.6, 0], [0.6, 0.2], [4.8, 0], [0.6, 0.2]
+    ];
+    return {
+      sampleRate,
+      channels: [Float32Array.from(segments.flatMap(([seconds, level]) => Array(Math.round(seconds * sampleRate)).fill(level)))]
+    };
+  }
+
+  async function analyzeTestAudio() {
     const errors = core.validateRecipe(recipe);
     if (errors.length) return message(errors[0], "error");
     setBusy(true);
-    $("#analyze").textContent = "Analyzing…";
+    $("#testAudio").textContent = "Analyzing…";
     try {
       await Promise.resolve();
-      renderReview({ silences: 0, fillers: 0, pauses: 0, removed: 0, original: sequenceInfo.durationSeconds, decisions: [] }, false);
-      message("Sequence metadata was analyzed. Audio-content detection is not implemented in this foundation build.", "warning");
+      renderReview(core.analyzeAudio(generatedAudio(), recipe));
+      message("Real RMS analysis completed against generated PCM. No Premiere media or demo result counts were used.", "");
     } finally {
-      $("#analyze").textContent = "Analyze Sequence";
+      $("#testAudio").textContent = "Analyze Generated Test Audio";
       setBusy(false);
     }
-  }
-
-  function showDemo() {
-    renderReview({
-      silences: 12, fillers: 5, pauses: 3, removed: 94, original: 1840,
-      decisions: [
-        { label: "Silence · suggested cut", time: "02:14.2–02:16.1" },
-        { label: "Long pause · shorten", time: "08:40.0–08:44.3" },
-        { label: "Filler word · transcript required", time: "12:05.8–12:06.2" }
-      ]
-    }, true);
-    message("Demo data previews the review experience only. It did not come from Premiere and cannot be applied.", "warning");
   }
 
   function init() {
@@ -112,6 +131,7 @@
     $("#preset").value = "natural";
     $("#preset").addEventListener("change", (event) => {
       if (event.target.value !== "custom") recipe = core.recipeForPreset(event.target.value);
+      clearAnalysis();
       renderRecipe();
     });
     $$('[data-setting]').forEach((input) => input.addEventListener("change", () => {
@@ -119,13 +139,20 @@
       const value = input.type === "checkbox" ? input.checked : typeof oldValue === "number" ? Number(input.value) : input.value;
       setPath(input.dataset.setting, value);
       $("#preset").value = core.matchingPreset(recipe);
+      clearAnalysis();
       renderRecipe();
       const errors = core.validateRecipe(recipe);
       message(errors[0] || "", errors.length ? "error" : "");
     }));
+    $("#decisions").addEventListener("change", (event) => {
+      const decision = analysisResult && analysisResult.decisions.find((item) => item.id === event.target.dataset.decisionId);
+      if (decision) {
+        decision.enabled = event.target.checked;
+        renderSummary();
+      }
+    });
     $("#refreshSequence").addEventListener("click", refreshSequence);
-    $("#analyze").addEventListener("click", analyze);
-    $("#demo").addEventListener("click", showDemo);
+    $("#testAudio").addEventListener("click", analyzeTestAudio);
     renderRecipe();
     refreshSequence();
     try { require("uxp").entrypoints.setup({ panels: { podcutPanel: { show: refreshSequence } } }); }
