@@ -11,7 +11,8 @@ PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors 
 - Real PCM silence detection and long-pause derivation
 - Temporary Premiere sequence-audio export and 16-bit PCM WAV decoding
 - Export diagnostics plus measured decode and analysis progress
-- Reviewable edit decisions with padding, timing, enable/disable controls, and duration estimates
+- Reviewable edit decisions with filters, bulk enable/disable, Locate playhead navigation, and updated duration estimates
+- Validated recipe and disclosure preferences stored locally; Reset settings is under Developer
 - Generated PCM development input for exercising the real detector without Premiere
 - Apply action intentionally disabled until Premiere timeline integration is validated
 
@@ -58,6 +59,10 @@ The Playwright check captures narrow and wide panel screenshots and verifies scr
 3. Start UXP Developer Tool as administrator and enable Developer Mode when prompted.
 4. Add a plugin, choose `dist/manifest.json`, then click **Load**.
 5. In Premiere, open **Window → UXP Plugins → PodCut**.
+
+If a floating PodCut panel is hard to find, use **Window → UXP Plugins → PodCut** to reopen it. The pale floating title bar and red close button belong to Premiere; PodCut cannot style or replace them. For a stable location, drag the **PodCut panel tab** into a Premiere dock until the docking target appears, then select **Window → Workspaces → Save as New Workspace**. Do not drag the outer Windows title bar when docking. Closing the panel does not mean a Premiere audio export was cancelled; use PodCut's explicit **Stop waiting** control only when you want to stop its wait.
+
+PodCut rechecks the active sequence when shown and when Refresh is used. Results are cleared when the project, sequence, recipe, duration, track counts, or clip counts change. Other timeline/effect changes may not alter those fields, so reanalyze after any edit before trusting a review. Locate moves only the playhead to a proposal's start; it is unavailable for generated audio or stale results. Apply to Timeline stays disabled.
 
 If Developer Mode must be enabled manually on Windows, create `%CommonProgramFiles%\Adobe\UXP\Developer\settings.json` with `{ "developer": true }`, then restart UXP Developer Tool.
 

@@ -6,7 +6,9 @@
 - Resend-inspired monochrome panel using Segoe UI/system sans and Consolas fallbacks
 - One bounded content scroller with responsive layouts from 280px through wide floating panels
 - Active sequence metadata, presets, collapsible advanced settings, review decisions, and a collapsed Developer section
-- Recipe and sequence snapshots, review invalidation, obsolete-callback guards, duplicate-operation prevention, and teardown cleanup
+- Validated local recipe/preset/disclosure persistence and Reset settings
+- Project/sequence/recipe snapshots, metadata revalidation, obsolete-callback guards, and duplicate-operation prevention
+- Review filters, filtered bulk toggles, enabled totals, and playhead-only Locate navigation
 - Honest Preparing → Exporting audio → Decoding → Analyzing → Ready progress
 - Temporary sequence WAV export using Premiere's in-app `IMMEDIATELY` export path
 - Export promise/event/output diagnostics, complete WAV parsing, and duration validation
@@ -27,14 +29,18 @@ The original timeout came from relying on the completion-event wait path alone. 
 
 ## Still requires Premiere validation
 
-- Reload the redesigned panel and confirm mouse-wheel/scrollbar behavior in docked, floating, narrow, and short layouts.
 - Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
 - Validate the reported 5m11s, 29-clip sequence and compare review timestamps with the real audio.
+- Check Locate at several known sequence times, generated-audio refusal, and stale-result refusal in Premiere.
+- Check Alt+Tab, minimize/restore, dock/undock, a second monitor if available, and close/reopen during export.
+- Check a long review list, disclosures, and saved settings in a docked panel.
 - Exercise empty, offline, nested, multicam, and unusual sequences.
 
 Browser screenshots and Playwright checks cover layout and interaction logic; they do not prove Premiere's UXP renderer matches Chromium.
 
-The September 26 host screenshot showed that Premiere still rendered native HTML buttons as gray pills and did not display the bundled SVG icons. The panel now uses keyboard-accessible button-role controls and a packaged PNG refresh icon. Adobe's Premiere UXP CSS guide also states CSS Grid is unsupported; review layouts now use flex. This correction awaits a fresh UDT reload and live host inspection. UDT's directory watcher has previously failed with `EPERM`, so rebuilding `dist/` alone may not refresh the open panel.
+On September 26, UDT reported a successful reload from `dist/`. The actual Premiere floating panel displayed the dark styling, outlined controls, visible refresh symbol, compact footer, and one scrollable content area. Mouse-wheel scrolling moved the panel content; the title bar and red X were outside the plugin canvas. Closing with that X and reopening via Window > UXP Plugins > PodCut returned visible content. A host-observed select spacing issue was reduced by resetting form-control margins. These checks were at the minimum floating size with no active sequence; they do not prove the review UI, Locate, or job continuity in the real host. A subsequent attempt to open the recent Test project left Premiere showing “Not Responding” before analysis, so no timeline validation was possible in that session. The final label-contrast CSS adjustment was built and browser-tested but could not be manually reloaded after UDT input geometry failed.
+
+The floating-window recovery cause remains undetermined: the host owns the title bar, and the menu reopen worked, but Alt+Tab/offscreen behavior was not reproduced. The normal recovery path and docking/workspace instructions are in README. Adobe documents unreliable Premiere panel hide/destroy callbacks, so PodCut no longer cancels its wait in those hooks; an explicit Stop waiting remains separate from host export cancellation.
 
 ## Not implemented
 
