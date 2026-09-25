@@ -22,7 +22,7 @@ test("overlapping silence ranges merge after padding", () => {
     { minimumSeconds: 0.5, paddingBefore: 0.1, paddingAfter: 0.1 },
     10
   );
-  assert.deepEqual(decisions.map(({ start, end }) => ({ start, end })), [{ start: 1.1, end: 4.9 }]);
+  assert.deepEqual(decisions.map(({ cutStart, cutEnd }) => ({ cutStart, cutEnd })), [{ cutStart: 1.1, cutEnd: 4.9 }]);
 });
 
 test("duration formatting handles hour-long sequences", () => {

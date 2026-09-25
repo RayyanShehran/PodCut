@@ -1,8 +1,9 @@
 (function (root, factory) {
-  const api = factory();
+  const audio = typeof module === "object" && module.exports ? require("./audio.js") : root.PodCutAudio;
+  const api = factory(audio);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PodCutCore = api;
-})(typeof globalThis === "undefined" ? this : globalThis, function () {
+})(typeof globalThis === "undefined" ? this : globalThis, function (audio) {
   "use strict";
 
   const BASE = {
@@ -41,6 +42,7 @@
     finite(recipe.cutSilence.paddingAfter, 0, 2, "Padding after");
     finite(recipe.longPauses.thresholdSeconds, 1, 30, "Pause threshold");
     finite(recipe.longPauses.keepSeconds, 0.1, 5, "Natural pause");
+    if (!audio.STYLE_THRESHOLDS_DBFS[recipe.cutSilence.style]) errors.push("Editing style is invalid.");
     if (recipe.longPauses.keepSeconds >= recipe.longPauses.thresholdSeconds) errors.push("Natural pause must be shorter than the pause threshold.");
     return errors;
   }
@@ -58,17 +60,61 @@
   }
 
   function silenceDecisions(ranges, settings, sequenceDuration) {
-    return mergeRanges(ranges.map((range) => ({
-      start: Math.max(0, range.start + settings.paddingBefore),
-      end: Math.min(sequenceDuration, range.end - settings.paddingAfter)
-    }))).filter((range) => range.end - range.start >= settings.minimumSeconds).map((range, index) => ({
+    return mergeRanges(ranges.filter((range) => range.qualifies !== false && range.end - range.start >= settings.minimumSeconds)).map((range, index) => ({
       id: `silence-${index + 1}`,
-      kind: "silence",
-      start: range.start,
-      end: range.end,
-      removeSeconds: range.end - range.start,
+      type: "silence",
+      sourceStart: range.start,
+      sourceEnd: range.end,
+      cutStart: range.start === 0 ? 0 : range.start + settings.paddingAfter,
+      cutEnd: range.end === sequenceDuration ? sequenceDuration : range.end - settings.paddingBefore,
+      reason: `Silence longer than ${settings.minimumSeconds}s`,
       enabled: true
+    })).filter((decision) => decision.cutStart < decision.cutEnd).map((decision) => ({
+      ...decision,
+      removeSeconds: decision.cutEnd - decision.cutStart
     }));
+  }
+
+  function longPauseDecisions(ranges, settings, sequenceDuration) {
+    return ranges.filter((range) => range.duration >= settings.thresholdSeconds).map((range, index) => {
+      const edgePadding = settings.keepSeconds / 2;
+      const cutStart = range.start === 0 ? 0 : range.start + edgePadding;
+      const cutEnd = range.end === sequenceDuration ? sequenceDuration : range.end - edgePadding;
+      return {
+        id: `long-pause-${index + 1}`,
+        type: "long-pause",
+        sourceStart: range.start,
+        sourceEnd: range.end,
+        cutStart,
+        cutEnd,
+        removeSeconds: cutEnd - cutStart,
+        reason: `Shorten pause to ${settings.keepSeconds}s`,
+        enabled: true
+      };
+    }).filter((decision) => decision.removeSeconds > 0);
+  }
+
+  function analyzeAudio(audioInput, recipe) {
+    const errors = validateRecipe(recipe);
+    if (errors.length) throw new Error(errors[0]);
+    const detections = audio.detectSilences(audioInput, recipe.cutSilence);
+    const durationSeconds = audioInput.channels[0].length / audioInput.sampleRate;
+    const longPauses = detections.filter((range) => range.duration >= recipe.longPauses.thresholdSeconds);
+    const ordinarySilences = recipe.longPauses.enabled
+      ? detections.filter((range) => range.duration < recipe.longPauses.thresholdSeconds)
+      : detections;
+    const decisions = [
+      ...(recipe.cutSilence.enabled ? silenceDecisions(ordinarySilences, recipe.cutSilence, durationSeconds) : []),
+      ...(recipe.longPauses.enabled ? longPauseDecisions(longPauses, recipe.longPauses, durationSeconds) : [])
+    ].sort((a, b) => a.cutStart - b.cutStart);
+    return {
+      durationSeconds,
+      detections,
+      decisions,
+      silenceCount: detections.filter((range) => range.qualifies).length,
+      longPauseCount: longPauses.length,
+      removedSeconds: decisions.reduce((total, decision) => total + (decision.enabled ? decision.removeSeconds : 0), 0)
+    };
   }
 
   function formatDuration(totalSeconds) {
@@ -79,5 +125,14 @@
     return h ? `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s` : `${m}m ${String(s).padStart(2, "0")}s`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, validateRecipe, mergeRanges, silenceDecisions, formatDuration };
+  function formatTimestamp(totalSeconds) {
+    const milliseconds = Math.max(0, Math.round(totalSeconds * 1000));
+    const hours = Math.floor(milliseconds / 3600000);
+    const minutes = Math.floor((milliseconds % 3600000) / 60000);
+    const seconds = Math.floor((milliseconds % 60000) / 1000);
+    const millis = milliseconds % 1000;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+  }
+
+  return { PRESETS, recipeForPreset, matchingPreset, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, formatDuration, formatTimestamp };
 });
