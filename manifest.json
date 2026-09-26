@@ -13,7 +13,7 @@
       "type": "panel",
       "id": "podcutPanel",
       "label": { "default": "PodCut" },
-      "minimumSize": { "width": 260, "height": 420 },
+      "minimumSize": { "width": 260, "height": 400 },
       "maximumSize": { "width": 1600, "height": 2000 },
       "preferredDockedSize": { "width": 320, "height": 720 },
       "preferredFloatingSize": { "width": 380, "height": 760 }
