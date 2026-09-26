@@ -31,6 +31,7 @@ The original timeout came from relying on the completion-event wait path alone. 
 
 ## Still requires Premiere validation
 
+- Real speech with internal pauses has not been tested. On September 26, Cinestudy's official [Podcast/Documentary project](https://cinestudy.org/2026/02/20/edit-this-podcast-documentary/) linked [Renfest 2025 HOST SEGMENTS.mp4](https://drive.google.com/file/d/1yNEXV00DG2dpxdjkZnVxtE5LceVYChhY/view?usp=sharing) (17:31, 6.71 GB, 3840×2160), but Google Drive showed “number of allowed playbacks has been exceeded” and its normal Download action returned an HTTP error. No footage or Premiere test project was downloaded/created. Do not infer its channel count, sample rate, frame rate, or audible content from Drive metadata. The separate 10-second opener is too short for the requested 1–3-minute speech test.
 - Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
 - Relink the 13 missing source clips in the 5m11s, 29-clip project, then analyze it and compare review timestamps with its real audio. Premiere requested media from `C:\Users\rayya\Downloads`; matching files were not found in Downloads or OneDrive. No analysis was run against offline media.
 - Check Locate at several known sequence times, generated-audio refusal, and stale-result refusal in Premiere.
@@ -55,3 +56,4 @@ The reported floating-window recovery failure remains unconfirmed: the host owns
 - PodCut requires Premiere Pro 26.5+ for `uxp.host.applicationPath` and UXP Developer Tool 2.2+.
 - Stop waiting and timeout stop PodCut's listener/polling only; they do not cancel Premiere's host render.
 - The DOM can clone sequences and remove selected track items, but linked-item and ripple semantics must be proven before timeline edits are enabled.
+- Adobe documents sequence clone actions, track-item clone/insert actions, source-relative in/out actions, and undoable `lockedAccess`/`executeTransaction` callbacks. It does not document a razor/split action in `SequenceEditor`, nor a linked-pair query on `AudioClipTrackItem`/`VideoClipTrackItem`. Retained-segment reconstruction and synchronization remain an unproven design, not an implemented editing workflow. No mutation was attempted while the speech fixture was unavailable.
