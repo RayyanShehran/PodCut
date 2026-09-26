@@ -45,25 +45,27 @@ for (const viewport of viewports) {
     await finalDecision.scrollIntoViewIfNeeded();
     await expect(finalDecision).toBeVisible();
     const layout = await page.evaluate(() => {
-      const content = document.querySelector(".content-scroll");
+      const content = document.querySelector("#app");
       const footer = document.querySelector(".action-bar").getBoundingClientRect();
+      const developer = document.querySelector(".developer-section").getBoundingClientRect();
       return {
         horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         scrollable: content.scrollHeight > content.clientHeight,
-        footerBottom: footer.bottom,
-        scrollbarCount: [document.documentElement, document.body, content].filter((node) => node.scrollHeight > node.clientHeight).length
+        footerGap: footer.top - developer.bottom,
+        scrollbarCount: [document.documentElement, document.body, content, document.querySelector(".content-scroll")].filter((node) => node.scrollHeight > node.clientHeight).length
       };
     });
     expect(layout.horizontalOverflow).toBe(false);
     expect(layout.scrollable).toBe(true);
-    expect(layout.footerBottom).toBeLessThanOrEqual(viewport.height);
+    expect(layout.footerGap).toBeGreaterThanOrEqual(16);
+    expect(layout.footerGap).toBeLessThanOrEqual(20);
     expect(layout.scrollbarCount).toBe(1);
     expect(errors).toEqual([]);
-    await page.locator(".content-scroll").evaluate((content) => { content.scrollTop = 0; });
-    const scrollBox = await page.locator(".content-scroll").boundingBox();
+    await page.locator("#app").evaluate((content) => { content.scrollTop = 0; });
+    const scrollBox = await page.locator("#app").boundingBox();
     await page.mouse.move(scrollBox.x + Math.min(80, scrollBox.width / 2), scrollBox.y + Math.min(80, scrollBox.height / 2));
     await page.mouse.wheel(0, 240);
-    await expect.poll(() => page.locator(".content-scroll").evaluate((content) => content.scrollTop)).toBeGreaterThan(0);
+    await expect.poll(() => page.locator("#app").evaluate((content) => content.scrollTop)).toBeGreaterThan(0);
     await page.screenshot({ path: testInfo.outputPath(`podcut-${viewport.width}x${viewport.height}.png`) });
   });
 }
@@ -103,7 +105,7 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
   const styles = await page.evaluate(() => {
     const css = (selector) => getComputedStyle(document.querySelector(selector));
     const card = document.querySelector(".sequence-card").getBoundingClientRect();
-    const content = document.querySelector(".content-scroll").getBoundingClientRect();
+    const content = document.querySelector("#app").getBoundingClientRect();
     const refresh = css("#refreshSequence");
     const analyze = css("#analyze");
     const developer = css("#developerToggle");
@@ -122,13 +124,13 @@ test("host-safe controls keep explicit geometry, typography, and icons", async (
       controlTag: document.querySelector("#developerToggle").tagName
     };
   });
-  expect(styles.cardPadding).toBe("16px");
+  expect(styles.cardPadding).toBe("12px");
   expect(styles.dotWidth).toBe("6px");
   expect(styles.dotMarginRight).toBe("8px");
   expect(styles.rowDisplay).toBe("flex");
   expect(styles.scrollbarClearance).toBeGreaterThanOrEqual(10);
   expect(styles.refreshSize).toEqual(["32px", "32px"]);
-  expect(styles.analyze).toEqual(["36px", "6px", "rgb(0, 0, 0)", "rgb(110, 114, 122)", "1", '"Segoe UI", Arial, sans-serif', "13px", "500"]);
+  expect(styles.analyze).toEqual(["32px", "6px", "rgb(0, 0, 0)", "rgb(110, 114, 122)", "1", '"Segoe UI", Arial, sans-serif', "13px", "500"]);
   expect(styles.developer).toEqual(["32px", "rgb(0, 0, 0)", '"Segoe UI", Arial, sans-serif', "12px", "400"]);
   expect(styles.progressAnimation).toBe("none");
   expect(styles.summaryDisplay).toBe("flex");
