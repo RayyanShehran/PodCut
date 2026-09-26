@@ -14,6 +14,8 @@
   async function prepare(adapter, review) {
     if (!review || review.key === "generated" || !review.source || !review.recipe || !review.decisions)
       throw new Error("Analyze a Premiere sequence before applying edits.");
+    if (review.currentRecipe !== review.recipe)
+      throw new Error("The recipe changed after analysis. Analyze again.");
     const current = await adapter.inspect();
     if (current.key !== review.key || JSON.stringify(current.source) !== JSON.stringify(review.source))
       throw new Error("The source sequence changed after analysis. Analyze again.");
@@ -38,6 +40,7 @@
       const prepared = await prepare(adapter, review);
       operation.originalSequenceId = prepared.current.source.sequenceId;
       operation.projectId = prepared.current.source.projectId;
+      operation.sourceSnapshot = prepared.current.source;
       operation.plan = prepared.plan;
       operation.outputName = prepared.outputName;
       stage("ready");
@@ -54,6 +57,8 @@
       requireTrue(await adapter.verifyCandidate(operation), "candidate verification");
       stage("naming output");
       requireTrue(await adapter.nameCandidate(operation, prepared.outputName), "output naming");
+      stage("opening output");
+      requireTrue(await adapter.presentCandidate(operation), "output opening");
       operation.status = "completed";
       completed.add(token);
       stage("completed");

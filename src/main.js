@@ -2,7 +2,9 @@
   "use strict";
   const core = globalThis.PodCutCore;
   const host = globalThis.PodCutPremiere;
+  const applyService = globalThis.PodCutApply;
   const audio = globalThis.PodCutAudio;
+  const PUBLIC_APPLY_ENABLED = false; // Playback validation has not passed; keep the production action gated.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");
@@ -10,6 +12,9 @@
   let analysisResult = null;
   let reviewSource = null;
   let analyzing = false;
+  let applying = false;
+  let applyCheckId = 0;
+  let readyApply = null;
   let refreshing = false;
   let refreshQueued = false;
   let exportWaiting = false;
@@ -107,12 +112,15 @@
   }
 
   function clearAnalysis() {
+    applyCheckId += 1;
+    readyApply = null;
     analysisResult = null;
     reviewSource = null;
     $("#review").hidden = true;
     $("#progress").hidden = true;
     $("#toggleDiagnostics").hidden = true;
     $("#diagnosticText").hidden = true;
+    $("#applyConfirmation").hidden = true;
   }
 
   function invalidateForRecipe() {
@@ -125,7 +133,7 @@
   }
 
   function syncControls() {
-    const busy = analyzing || refreshing;
+    const busy = analyzing || refreshing || applying;
     $("#preset").disabled = busy;
     setActionDisabled("#refreshSequence", busy);
     setActionDisabled("#testAudio", busy);
@@ -135,9 +143,17 @@
       control.disabled = busy || !recipe[operation].enabled;
     });
     $$('[data-setting$=".enabled"]').forEach((control) => { control.disabled = busy; });
+    $$('#decisions input[type="checkbox"]').forEach((control) => { control.disabled = busy; });
+    $$('[data-filter], #enableVisible, #disableVisible, [data-locate-id]').forEach((control) =>
+      setActionDisabledControl(control, busy || (control.dataset.locateId && reviewSource?.key === "generated")));
     const ready = sequenceInfo && sequenceInfo.state === "ready" && sequenceInfo.audioTracks > 0;
-    setActionDisabled("#analyze", analyzing ? !exportWaiting : retryBlocked || refreshing || !ready);
+    setActionDisabled("#analyze", applying || (analyzing ? !exportWaiting : retryBlocked || refreshing || !ready));
     $("#analyze").textContent = analyzing ? (exportWaiting ? "Stop waiting" : "Analyzing…") : "Analyze Sequence";
+  }
+
+  function setActionDisabledControl(control, disabled) {
+    control.setAttribute("aria-disabled", String(Boolean(disabled)));
+    control.tabIndex = disabled ? -1 : 0;
   }
 
   function renderRecipe() {
@@ -155,7 +171,7 @@
   }
 
   async function refreshSequence(manual) {
-    if (analyzing) return;
+    if (analyzing || applying) return;
     if (refreshing) { refreshQueued = true; return; }
     refreshing = true;
     const id = ++refreshId;
@@ -197,6 +213,7 @@
   }
 
   function activeSourceChanged() {
+    if (applying) return;
     clearAnalysis();
     sequenceInfo = null;
     $("#sequenceName").textContent = "Checking Premiere…";
@@ -222,13 +239,80 @@
   }
 
   function setVisibleDecisions(enabled) {
-    if (!analysisResult) return;
+    if (!analysisResult || applying) return;
     const visible = core.filteredDecisions(analysisResult, reviewFilter);
     visible.forEach((decision) => { decision.enabled = enabled; });
     const byId = new Map(analysisResult.decisions.map((decision) => [decision.id, decision]));
     $$("#decisions .decision").forEach((row) => { row.querySelector('input[type="checkbox"]').checked = byId.get(row.dataset.id).enabled; });
     renderSummary();
     renderFilter();
+    refreshApplyState();
+  }
+
+  function applyReview(confirmed) {
+    return { key: reviewSource.key, recipe: reviewSource.recipe, currentRecipe: JSON.stringify(recipe),
+      source: reviewSource.applySnapshot, analysisId: reviewSource.analysisId,
+      decisions: analysisResult.decisions, confirmed };
+  }
+
+  async function refreshApplyState() {
+    const id = ++applyCheckId;
+    readyApply = null;
+    setActionDisabled("#apply", true);
+    $("#applyConfirmation").hidden = true;
+    if (!analysisResult || !reviewSource) return;
+    if (reviewSource.key === "generated") { $("#applyStatus").textContent = "Generated audio cannot be applied to a Premiere sequence."; return; }
+    if (reviewSource.applyError || !reviewSource.applySnapshot) {
+      $("#applyStatus").textContent = `Unsupported: ${reviewSource.applyError || "Source inspection unavailable."}`; return;
+    }
+    $("#applyStatus").textContent = "Checking source layout and frame plan…";
+    try {
+      const prepared = await applyService.prepare(host.applyAdapter(), applyReview(false));
+      if (id !== applyCheckId || applying) return;
+      readyApply = prepared;
+      const removed = (prepared.removedFrames / prepared.plan.fps).toFixed(3);
+      const kept = (prepared.plan.outputFrames / prepared.plan.fps).toFixed(3);
+      $("#applyStatus").textContent = `Ready for confirmation: ${prepared.cutCount} cuts; remove ${prepared.removedFrames} frames (${removed}s), retain ${prepared.plan.outputFrames} frames (${kept}s). ${PUBLIC_APPLY_ENABLED ? "" : "Apply remains locked pending playback validation."}`;
+      setActionDisabled("#apply", !PUBLIC_APPLY_ENABLED);
+    } catch (error) {
+      if (id !== applyCheckId || applying) return;
+      $("#applyStatus").textContent = `Unsupported or stale: ${error.message || error}`;
+    }
+  }
+
+  async function confirmApply() {
+    if (!PUBLIC_APPLY_ENABLED || !readyApply || applying || !reviewSource) return;
+    $("#applyConfirmationText").textContent = `Create “${readyApply.outputName}” from “${readyApply.current.source.name}”? ${readyApply.cutCount} enabled cuts remove ${readyApply.removedFrames} frames (${(readyApply.removedFrames / readyApply.plan.fps).toFixed(3)}s). Only one online V1/A1 source clip with no extra content is supported. Premiere will add a new sequence and retained subclips; the original remains untouched.`;
+    $("#applyConfirmation").hidden = false;
+  }
+
+  async function runApply() {
+    if (!PUBLIC_APPLY_ENABLED || !readyApply || applying || !reviewSource) return;
+    const review = applyReview(true);
+    applying = true;
+    applyCheckId += 1;
+    $("#applyConfirmation").hidden = true;
+    syncControls();
+    try {
+      const operation = await applyService.apply(host.applyAdapter(), review, (stage) => {
+        progress(stage[0].toUpperCase() + stage.slice(1), "Premiere candidate sequence; no project save requested");
+      });
+      if (operation.status === "completed") {
+        $("#progress").hidden = true;
+        $("#applyStatus").textContent = `Completed: ${operation.outputName} (${operation.candidateSequenceId}).`;
+        message(`Verified new sequence “${operation.outputName}”. One Undo reverses its edit transaction; clone, subclips, naming, and opening are separate steps.`, "");
+      } else {
+        $("#progress").hidden = true;
+        $("#applyStatus").textContent = `Failed operation ${operation.id}. Partial candidate: ${operation.candidateSequenceId || "not identified"}. Subclips: ${operation.subclips.map(s => s.id || s).join(", ") || "none"}.`;
+        message(`${operation.errors.join(" ")} Original review retained; retry creates a fresh candidate.`, "error");
+      }
+    } catch (error) {
+      $("#progress").hidden = true;
+      message(error.message || "Apply failed before candidate creation.", "error");
+    } finally {
+      applying = false;
+      syncControls();
+    }
   }
 
   function renderReview(result, source) {
@@ -241,6 +325,7 @@
       : '<p class="empty">No cuts meet the current recipe settings.</p>';
     renderFilter();
     setActionDisabled("#apply", true);
+    refreshApplyState();
   }
 
   function generatedAudio() {
@@ -250,7 +335,7 @@
   }
 
   async function analyzeTestAudio() {
-    if (analyzing) return;
+    if (analyzing || applying) return;
     const errors = core.validateRecipe(recipe);
     if (errors.length) return message(errors[0], "error");
     const id = ++operationId;
@@ -279,6 +364,7 @@
   }
 
   async function analyzeSequence() {
+    if (applying) return;
     if (analyzing) {
       if (exportWaiting) {
         host.stopWaiting();
@@ -330,6 +416,12 @@
         clearAnalysis();
         throw new Error("The active sequence changed during analysis. Refresh and analyze again.");
       }
+      try {
+        const inspected = await host.applyAdapter().inspect();
+        if (inspected.key !== source.key) throw new Error("Source changed after analysis.");
+        source.applySnapshot = inspected.source;
+      } catch (error) { source.applyError = error.message || String(error); }
+      source.analysisId = id;
       renderReview(result, source);
       $("#reviewLabel").textContent = "Premiere sequence";
       progress("Ready", "Review the detected edits below", 1, 1);
@@ -364,10 +456,11 @@
     const app = $("#app");
     if (rootNode && rootNode.appendChild && rootNode.contains && !rootNode.contains(app)) rootNode.appendChild(app);
     app.hidden = false;
-    if (!analyzing) refreshSequence(false);
+    if (!analyzing && !applying) refreshSequence(false);
   }
 
   async function locateDecision(id) {
+    if (applying) return;
     const decision = analysisResult && analysisResult.decisions.find((item) => item.id === id);
     if (!decision || !reviewSource || reviewSource.key === "generated") return;
     try {
@@ -429,7 +522,7 @@
     }));
     $("#decisions").addEventListener("change", (event) => {
       const decision = analysisResult && analysisResult.decisions.find((item) => item.id === event.target.dataset.decisionId);
-      if (decision) { decision.enabled = event.target.checked; renderSummary(); renderFilter(); }
+      if (decision && !applying) { decision.enabled = event.target.checked; renderSummary(); renderFilter(); refreshApplyState(); }
     });
     $("#decisions").addEventListener("click", (event) => {
       const control = event.target.closest("[data-locate-id]");
@@ -451,6 +544,9 @@
     $("#developerToggle").addEventListener("click", () => toggleDisclosure($("#developerToggle"), $("#developerPanel")));
     $("#refreshSequence").addEventListener("click", () => refreshSequence(true));
     $("#analyze").addEventListener("click", analyzeSequence);
+    $("#apply").addEventListener("click", confirmApply);
+    $("#confirmApply").addEventListener("click", runApply);
+    $("#cancelApply").addEventListener("click", () => { $("#applyConfirmation").hidden = true; });
     $("#testAudio").addEventListener("click", analyzeTestAudio);
     $("#toggleDiagnostics").addEventListener("click", () => {
       const details = $("#diagnosticText");

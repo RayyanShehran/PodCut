@@ -90,8 +90,14 @@
             </div>
           </div>
           <div id="decisions" class="decisions"></div>
+          <p id="applyStatus" class="apply-status" aria-live="polite">Checking Apply eligibility…</p>
           <div id="apply" class="button" role="button" tabindex="-1" aria-disabled="true">Apply to Timeline</div>
-          <p class="safety">Timeline editing is not available yet.</p>
+          <div id="applyConfirmation" class="apply-confirmation" hidden>
+            <p id="applyConfirmationText"></p>
+            <div id="confirmApply" class="button" role="button" tabindex="0">Create new sequence</div>
+            <div id="cancelApply" class="text-button" role="button" tabindex="0">Cancel</div>
+          </div>
+          <p class="safety">Apply stays locked until the fixture playback check passes. The source sequence is never overwritten.</p>
         </section>
 
         <section class="developer-section">
@@ -120,6 +126,7 @@
     <script src="src/audio.js"></script>
     <script src="src/core.js"></script>
     <script src="src/premiere.js"></script>
+    <script src="src/apply.js"></script>
     <script src="src/main.js"></script>
   </body>
 </html>

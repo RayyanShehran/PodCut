@@ -273,5 +273,213 @@
     if (!moved) throw new Error("Premiere did not move the sequence playhead.");
   }
 
-  return { activeSequence, claimExport, createExportWaiter, onActiveSourceChanged, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
+  function applyAdapter() {
+    const ppro = getApi();
+    if (!ppro) throw new Error("Apply requires Premiere Pro 26.5 or later.");
+    const core = root.PodCutCore;
+    const handles = new Map();
+    const tick = (seconds) => ppro.TickTime.createWithSeconds(seconds);
+    const guid = (sequence) => sequence.guid.toString();
+    const checkedTransaction = (project, actions, label) => {
+      let accepted = false;
+      project.lockedAccess(() => {
+        const prepared = actions(); // Build all actions before the first addAction; Premiere may partially apply on a throw.
+        accepted = project.executeTransaction((compound) => {
+          for (const action of prepared) if (compound.addAction(action) === false) throw new Error(`${label}: action rejected.`);
+        }, label);
+      });
+      return accepted;
+    };
+    const itemIds = async (folder) => {
+      const items = await folder.getItems();
+      const result = [];
+      for (const item of items) {
+        result.push(item);
+        let childFolder;
+        try { childFolder = ppro.FolderItem.cast(item); } catch (error) { childFolder = null; }
+        if (childFolder && typeof childFolder.getItems === "function") result.push(...await itemIds(childFolder));
+      }
+      return result;
+    };
+    const components = async (item) => {
+      const chain = await item.getComponentChain();
+      if (!chain) return [];
+      const names = [];
+      for (let i = 0; i < chain.getComponentCount(); i += 1) {
+        const component = chain.getComponentAtIndex(i);
+        const name = await component.getDisplayName();
+        if (!["Motion", "Opacity", "Time Remapping", "Volume", "Channel Volume", "Panner"].includes(name)) names.push(name);
+        for (let j = 0; j < component.getParamCount(); j += 1)
+          if (component.getParam(j).isTimeVarying()) names.push(`${name} keyframes`);
+      }
+      return names;
+    };
+    const inspectItem = async (item) => {
+      const projectItem = await item.getProjectItem();
+      return { projectItemId: projectItem.getId(), start: (await item.getStartTime()).seconds,
+        end: (await item.getEndTime()).seconds, inPoint: (await item.getInPoint()).seconds,
+        outPoint: (await item.getOutPoint()).seconds, trackIndex: await item.getTrackIndex(), speed: await item.getSpeed(),
+        disabled: await item.isDisabled(), reversed: Boolean(await item.isSpeedReversed()),
+        adjustmentLayer: Boolean(item.isAdjustmentLayer && await item.isAdjustmentLayer()),
+        effects: await components(item) };
+    };
+    const inspectSequence = async (project, sequence) => {
+      const videoTracks = await sequence.getVideoTrackCount();
+      const audioTracks = await sequence.getAudioTrackCount();
+      const captionTracks = await sequence.getCaptionTrackCount();
+      const videos = [], audios = [];
+      let videoTransitions = 0, audioTransitions = 0, otherItems = 0, videoMuted = false, audioMuted = false;
+      for (let i = 0; i < videoTracks; i += 1) {
+        const track = await sequence.getVideoTrack(i);
+        videos.push(...track.getTrackItems(1, false));
+        videoTransitions += track.getTrackItems(2, false).length;
+        otherItems += track.getTrackItems(3, false).length + track.getTrackItems(4, false).length;
+        videoMuted ||= await track.isMuted();
+      }
+      for (let i = 0; i < audioTracks; i += 1) {
+        const track = await sequence.getAudioTrack(i);
+        audios.push(...track.getTrackItems(1, false));
+        audioTransitions += track.getTrackItems(2, false).length;
+        otherItems += track.getTrackItems(3, false).length + track.getTrackItems(4, false).length;
+        audioMuted ||= await track.isMuted();
+      }
+      const videoItems = await Promise.all(videos.map(inspectItem));
+      const audioItems = await Promise.all(audios.map(inspectItem));
+      const projectItem = videos.length ? await videos[0].getProjectItem() : null;
+      const media = projectItem && ppro.ClipProjectItem.cast(projectItem);
+      const source = { projectId: project.guid.toString(), projectPath: project.path,
+        sequenceId: guid(sequence), name: sequence.name, durationSeconds: (await sequence.getEndTime()).seconds,
+        fps: (await sequence.getSettings()).getVideoFrameRate().value, videoTracks, audioTracks, captionTracks,
+        videoTransitions, audioTransitions, otherItems, videoItems, audioItems, videoMuted, audioMuted,
+        mediaPath: media && await media.getMediaFilePath(), offline: media && await media.isOffline(),
+        nested: media && await media.isSequence(), multicam: media && await media.isMulticamClip(),
+        merged: media && await media.isMergedClip(),
+        unsupportedEffects: [...videoItems, ...audioItems].flatMap(item => item.effects) };
+      return { source, media, videos, audios };
+    };
+    const sequences = async (project) => new Map((await project.getSequences()).map(sequence => [guid(sequence), sequence]));
+    const getHandle = (operation) => {
+      const handle = handles.get(operation.id);
+      if (!handle) throw new Error("Apply operation lost its Premiere handles.");
+      return handle;
+    };
+    return {
+      async inspect() {
+        const current = await activeSequence();
+        if (current.state !== "ready") throw new Error(current.message || "No active sequence.");
+        const inspected = await inspectSequence(current.project, current.sequence);
+        return { key: core.sequenceKey(current), source: inspected.source,
+          handles: { project: current.project, original: current.sequence, media: inspected.media } };
+      },
+      async createCandidate(operation) {
+        const inspected = await this.inspect();
+        if (JSON.stringify(inspected.source) !== JSON.stringify(operation.sourceSnapshot))
+          throw new Error("The source changed during Apply preflight.");
+        const { project, original, media } = inspected.handles;
+        const handle = { project, original, media, originalSource: inspected.source, subclips: new Map(),
+          beforeSequences: await sequences(project) };
+        handles.set(operation.id, handle);
+        const accepted = checkedTransaction(project, () => [original.createCloneAction()], `PodCut clone ${operation.id}`);
+        const after = await sequences(project);
+        const added = [...after].filter(([id]) => !handle.beforeSequences.has(id));
+        if (added.length === 1) { handle.candidate = added[0][1]; operation.candidateSequenceId = added[0][0]; }
+        if (!accepted || !handle.candidate) throw new Error("Premiere did not create exactly one identifiable candidate sequence.");
+        return operation.candidateSequenceId;
+      },
+      async createSubclip(operation, segment) {
+        const handle = getHandle(operation);
+        const before = new Set((await itemIds(await handle.project.getRootItem())).map(item => item.getId()));
+        const name = `PodCut ${operation.id} segment ${operation.subclips.length + 2}`;
+        const accepted = checkedTransaction(handle.project, () => [handle.media.createSubClipAction(name,
+          tick(segment.sourceStartFrame / operation.plan.fps), tick(segment.sourceEndFrame / operation.plan.fps), true,
+          { takeVideo: true, takeAudio: true })], `PodCut subclip ${operation.id}`);
+        const added = (await itemIds(await handle.project.getRootItem())).filter(item => !before.has(item.getId()) && item.name === name);
+        if (added.length === 1) handle.subclips.set(added[0].getId(), added[0]);
+        if (!accepted || added.length !== 1) throw new Error(`Premiere did not create exactly one identifiable subclip ${name}.`);
+        return { id: added[0].getId(), sourceStartFrame: segment.sourceStartFrame, sourceEndFrame: segment.sourceEndFrame };
+      },
+      async editCandidate(operation) {
+        const handle = getHandle(operation);
+        if (JSON.stringify((await inspectSequence(handle.project, handle.original)).source) !== JSON.stringify(handle.originalSource))
+          throw new Error("The original sequence changed before candidate editing.");
+        const candidate = handle.candidate;
+        const video = (await candidate.getVideoTrack(0)).getTrackItems(1, false);
+        const audio = (await candidate.getAudioTrack(0)).getTrackItems(1, false);
+        if (video.length !== 1 || audio.length !== 1) throw new Error("Candidate changed before editing.");
+        const editor = ppro.SequenceEditor.getEditor(candidate);
+        const segments = operation.plan.segments;
+        return checkedTransaction(handle.project, () => {
+          const actions = [video[0].createSetOutPointAction(tick(segments[0].sourceEndFrame / operation.plan.fps)),
+            audio[0].createSetOutPointAction(tick(segments[0].sourceEndFrame / operation.plan.fps))];
+          for (let i = 1; i < segments.length; i += 1) {
+            const subclipId = operation.subclips[i - 1].id || operation.subclips[i - 1];
+            const subclip = handle.subclips.get(subclipId);
+            if (!subclip) throw new Error(`Retained subclip ${i} is missing.`);
+            actions.push(editor.createOverwriteItemAction(subclip, tick(segments[i].outputStartFrame / operation.plan.fps), 0, 0));
+          }
+          return actions;
+        }, `PodCut edit ${operation.id}`);
+      },
+      async verifyCandidate(operation) {
+        const handle = getHandle(operation);
+        const after = await inspectSequence(handle.project, handle.candidate);
+        const before = await inspectSequence(handle.project, handle.original);
+        if (JSON.stringify(before.source) !== JSON.stringify(handle.originalSource)) throw new Error("Original sequence changed during Apply.");
+        const plan = operation.plan;
+        const expectedEnd = plan.outputFrames / plan.fps;
+        if (after.source.videoTracks !== handle.originalSource.videoTracks ||
+            after.source.audioTracks !== handle.originalSource.audioTracks || after.source.captionTracks !== 0 ||
+            after.source.videoTransitions || after.source.audioTransitions || after.source.otherItems ||
+            Math.abs(after.source.durationSeconds - expectedEnd) > 1e-4 ||
+            after.source.videoItems.length !== plan.segments.length || after.source.audioItems.length !== plan.segments.length)
+          throw new Error("Candidate structure or duration does not match the frame plan.");
+        for (let i = 0; i < plan.segments.length; i += 1) {
+          const segment = plan.segments[i];
+          for (const item of [after.source.videoItems[i], after.source.audioItems[i]]) {
+            const near = (value, frame) => Math.abs(value - frame / plan.fps) < 1e-4;
+            if (!near(item.start, segment.outputStartFrame) || !near(item.end, segment.outputEndFrame) ||
+                item.trackIndex !== 0 ||
+                !near(item.outPoint - item.inPoint, segment.sourceEndFrame - segment.sourceStartFrame) ||
+                !near(item.inPoint, i ? 0 : segment.sourceStartFrame) ||
+                !near(item.outPoint, i ? segment.sourceEndFrame - segment.sourceStartFrame : segment.sourceEndFrame) ||
+                item.projectItemId !== (i ? operation.subclips[i - 1].id || operation.subclips[i - 1] : handle.originalSource.videoItems[0].projectItemId))
+              throw new Error(`Candidate video/audio segment ${i + 1} differs from the frame plan.`);
+          }
+        }
+        return true;
+      },
+      async nameCandidate(operation, name) {
+        const handle = getHandle(operation);
+        if (!handle.candidate || guid(handle.candidate) !== operation.candidateSequenceId) return false;
+        const item = await handle.candidate.getProjectItem();
+        return checkedTransaction(handle.project, () => [item.createSetNameAction(name)], `PodCut name ${operation.id}`);
+      },
+      async presentCandidate(operation) {
+        const handle = getHandle(operation);
+        return handle.project.openSequence(handle.candidate);
+      },
+      async reconcile(operation) {
+        const handle = handles.get(operation.id);
+        if (!handle) return;
+        const after = await sequences(handle.project);
+        const added = [...after].filter(([id]) => !handle.beforeSequences.has(id));
+        if (!operation.candidateSequenceId && added.length === 1) {
+          handle.candidate = added[0][1]; operation.candidateSequenceId = added[0][0];
+        }
+        const owned = (await itemIds(await handle.project.getRootItem())).filter(item => item.name.startsWith(`PodCut ${operation.id} segment `));
+        for (const item of owned) if (!operation.subclips.some(entry => (entry.id || entry) === item.getId()))
+          operation.subclips.push({ id: item.getId(), recovered: true });
+      },
+      async restoreOriginal(operation) {
+        const handle = handles.get(operation.id);
+        if (!handle) return;
+        const active = await handle.project.getActiveSequence();
+        if (active && guid(active) === operation.candidateSequenceId) {
+          if (!(await handle.project.openSequence(handle.original))) throw new Error("Premiere did not reopen the source sequence.");
+        }
+      }
+    };
+  }
+
+  return { activeSequence, applyAdapter, claimExport, createExportWaiter, onActiveSourceChanged, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
 });

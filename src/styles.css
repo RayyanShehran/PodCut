@@ -111,6 +111,9 @@ input:disabled, select:disabled { color: var(--disabled); border-color: var(--bo
 .locate[aria-disabled="true"] { color: var(--disabled); cursor: default; }
 .empty { padding: 14px 0; }
 #apply { margin-top: 12px; }
+.apply-status { margin-top: 12px; color: var(--secondary); overflow-wrap: anywhere; }
+.apply-confirmation { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+.apply-confirmation .button { margin-top: 8px; }
 .safety { text-align: center; }
 .action-bar { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); background: var(--canvas); }
 .progress-heading { display: flex; justify-content: space-between; gap: 8px; }

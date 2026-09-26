@@ -101,14 +101,16 @@
   }
 
   function simpleSourceError(source) {
-    if (!source || source.videoTracks !== 1 || source.audioTracks !== 1 || source.captionTracks !== 0)
-      return "Apply supports exactly one video track, one audio track, and no captions.";
+    if (!source || source.videoTracks < 1 || source.audioTracks < 1 || source.captionTracks !== 0)
+      return "Apply requires V1, A1, and no caption tracks.";
     if (source.videoTransitions || source.audioTransitions || source.otherItems)
       return "Transitions or other timeline items are not supported.";
     const video = source.videoItems && source.videoItems[0];
     const audioItem = source.audioItems && source.audioItems[0];
     if (!source.videoItems || !source.audioItems || source.videoItems.length !== 1 || source.audioItems.length !== 1 || !video || !audioItem)
       return "Apply supports one linked V1/A1 clip pair only.";
+    if (video.trackIndex !== 0 || audioItem.trackIndex !== 0)
+      return "The only source clips must be on V1 and A1; other tracks must be empty.";
     if (!source.mediaPath || source.offline || source.nested || source.multicam || source.merged)
       return "The source must be one online, ordinary media file.";
     if (source.videoMuted || source.audioMuted || video.disabled || audioItem.disabled || video.adjustmentLayer)

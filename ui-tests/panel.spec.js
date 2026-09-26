@@ -285,3 +285,30 @@ test("Premiere project activation clears the old review and refreshes the source
   await expect(page.locator("#sequenceName")).toHaveText("Second");
   await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "false");
 });
+
+test("review shows frame-aligned Apply preview but keeps the public action gated", async ({ page }) => {
+  await page.goto(panelUrl);
+  await page.evaluate(() => {
+    const item = { projectItemId: "media", start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
+    const source = { projectId: "p", projectPath: "test.prproj", sequenceId: "s", name: "Interview", durationSeconds: 36,
+      fps: 30, videoTracks: 1, audioTracks: 1, captionTracks: 0, videoTransitions: 0, audioTransitions: 0,
+      otherItems: 0, videoItems: [{ ...item }], audioItems: [{ ...item }], videoMuted: false, audioMuted: false,
+      mediaPath: "interview.mov", offline: false, nested: false, multicam: false, merged: false, unsupportedEffects: [] };
+    const info = { state: "ready", projectId: "p", projectPath: "test.prproj", sequenceId: "s", name: "Interview",
+      durationSeconds: 36, videoTracks: 1, audioTracks: 1, videoClips: 1, audioClips: 1, sequence: {} };
+    PodCutPremiere.activeSequence = async () => info;
+    PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
+    PodCutPremiere.applyAdapter = () => ({ inspect: async () => ({ key: PodCutCore.sequenceKey(info), source }) });
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(36000).fill(0.2))] });
+    PodCutCore.analyzeAudioAsync = async () => ({ durationSeconds: 36, silenceCount: 1, longPauseCount: 0,
+      decisions: [{ id: "cut", type: "silence", enabled: true, cutStart: 10.25, cutEnd: 11.8, removeSeconds: 1.55 }] });
+  });
+  await page.locator("#refreshSequence").click();
+  await page.locator("#analyze").click();
+  await expect(page.locator("#applyStatus")).toContainText("remove 46 frames (1.533s)");
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator("#applyConfirmation")).toBeHidden();
+  await page.locator("#decisions input").uncheck();
+  await expect(page.locator("#applyStatus")).toContainText("at least one cut");
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
+});
