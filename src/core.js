@@ -70,6 +70,36 @@
     return decision.cutStart;
   }
 
+  function planSimpleEdit({ durationSeconds, sourceInSeconds, fps, cuts }) {
+    if (!Number.isInteger(fps) || fps <= 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0 ||
+        !Number.isFinite(sourceInSeconds) || sourceInSeconds < 0 || !Array.isArray(cuts) || !cuts.length)
+      throw new Error("A single, frame-aligned source clip and at least one cut are required.");
+    const frame = (seconds) => Math.ceil(seconds * fps - 1e-8);
+    const duration = Math.round(durationSeconds * fps);
+    const sourceIn = Math.round(sourceInSeconds * fps);
+    if (Math.abs(duration / fps - durationSeconds) > 1e-4 || Math.abs(sourceIn / fps - sourceInSeconds) > 1e-4)
+      throw new Error("The source in-point and duration must align to sequence frames.");
+    const segments = [];
+    let previousEnd = 0;
+    let outputStart = 0;
+    for (const cut of cuts) {
+      if (!Number.isFinite(cut.cutStart) || !Number.isFinite(cut.cutEnd) || cut.cutStart <= 0 ||
+          cut.cutEnd >= durationSeconds || cut.cutEnd <= cut.cutStart)
+        throw new Error("Cuts must be finite, positive, and strictly inside the source clip.");
+      const start = frame(cut.cutStart);
+      const end = frame(cut.cutEnd);
+      if (start <= previousEnd || end <= start || end >= duration)
+        throw new Error("Cuts overlap, collapse after frame rounding, or touch a clip edge.");
+      segments.push({ sourceStartFrame: sourceIn + previousEnd, sourceEndFrame: sourceIn + start,
+        outputStartFrame: outputStart, outputEndFrame: outputStart + start - previousEnd });
+      outputStart += start - previousEnd;
+      previousEnd = end;
+    }
+    segments.push({ sourceStartFrame: sourceIn + previousEnd, sourceEndFrame: sourceIn + duration,
+      outputStartFrame: outputStart, outputEndFrame: outputStart + duration - previousEnd });
+    return { fps, segments, outputFrames: outputStart + duration - previousEnd };
+  }
+
   function validateRecipe(recipe) {
     const errors = [];
     const finite = (value, min, max, label) => {
@@ -182,5 +212,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });
