@@ -16,9 +16,24 @@
 - Dependency-free 16-bit PCM decoding and 20ms RMS/dBFS silence detection
 - Silence and long-pause decisions with padding, enable/disable state, and duration estimates
 - Generated PCM development analysis connected to the same review UI
-- Timeline mutation remains disabled with accurate review-only wording
+- Guarded candidate-only Apply service, with frame-aligned preflight, stage reporting, output verification, and failed-artifact labeling
+- Public Apply remains deliberately gated; the panel can preview the exact edit but cannot submit it until playback validation passes
 
 ## Host validation completed
+
+### September 27 guarded Apply implementation and live host checks
+
+Commits `da96982`, `4ddad5b`, and `baf3afb` added a narrowly scoped Apply runner. The only supported source is one online, ordinary, linked V1/A1 clip pair from the same media item, with matching timing, unit forward speed, no transitions, captions, extra items, added effects, or keyframed parameters. Additional **empty** tracks are allowed; the Premiere fixture has 3V/3A tracks but only V1/A1 populated. Unsupported or changed source snapshots, changed recipes, missing confirmation, and invalid frame plans fail before candidate creation. The panel shows exact frame-aligned removed and retained durations. Its public Apply button is still gated.
+
+The runner creates a new sequence candidate by GUID, creates retained subclips by project-item ID, then edits only that candidate. It verifies the original snapshot is unchanged and checks every output V/A item's count, track, project-item ID, source-relative in/out, timeline start/end, and total frame duration before naming and opening `— PodCut`. An operation record retains the original/candidate IDs, subclip IDs, stages, and errors. A normal failure reconciles artifacts, labels an identifiable partial sequence `PodCut FAILED <operation-id>`, reopens the original if the candidate was active, and reports failure. Retry always creates a fresh candidate; it never resumes a failed one. No artifacts are deleted and the project is not saved automatically. A host/process crash can still leave an unlabelled partial copy; the record is in memory, not persistent. This is not yet a general-purpose safe editor.
+
+After building and reloading the plugin in Premiere Pro 26.5, direct debugger calls into the **new service and host adapter** completed a one-cut candidate (`5952c188-710e-42b2-a006-1a76f2db28e0`, 1034 frames, 34s14f) and a two-cut candidate (`c4bfb30e-e77a-4b0d-aa61-12fd36e17607`, 947 frames, 31s17f). The host adapter verified both candidates and the original unchanged. These used known fixture review decisions, not a click on the public Apply button. The one-cut candidate was visibly opened with matching V/A segments. After that complete workflow, one native Ctrl+Z reversed only the output **name**, leaving the edit in place; Ctrl+Shift+Z restored the name. Candidate creation, subclip preparation, the grouped sequence edit, and naming are separate Undo history entries. Do **not** treat one Undo as rollback of the full operation. The earlier isolated edit proof established one-step Undo/Redo for the sequence edit itself.
+
+A controlled failure injected immediately before candidate editing left candidate `fb96896b-cd9a-4902-b826-89f77ffbe4dd` labeled `PodCut FAILED 1790454768619-794j91`, retained its created subclip, returned a failed state, and left the original active. Retrying the same review completed on fresh candidate `8799e841-8dfd-4971-8b7c-a9747c98a14c` (1034 frames). A disposable trimmed-in input was created and inspected live: timeline `[0,31]` from source `[5,36]`, eligible for the runner. The subsequent service run could not be completed because the debugger lost focus, so only the older isolated trimmed-source edit proof applies. These new disposable operations were not saved over the fixture proof project.
+
+Automated tests cover eligibility, stale/invalid preflight, staged failures including false return/exception, verification refusal, retry, concurrent/duplicate Apply, and gated browser preview. On September 27, `node --test` reported 40 passed and one optional fixture test skipped; 12 browser UI tests, manifest validation, and build passed. `npm test` could not start because the user's npm launcher path was missing; direct Node test execution worked.
+
+**Playback gate remains open:** no one has audibly and visually checked `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Validation 2026-09-26.prproj`, sequence `PodCut TEST two cuts 31s17f`, at approximately 9–12s, 20–22s, and the final two seconds for clipped speech, clicks, unintended silence, and A/V drift. Public Apply must remain disabled until that check passes. Static changes to Premiere's built-in Motion/Opacity/Volume-type parameters are not currently distinguished from defaults; custom effects and keyframed parameters are rejected. This limits the eligibility guarantee and must be resolved before broader production use.
 
 - Premiere Pro 26.5.0 / UXP 9.3.0 loaded the panel and read the active sequence.
 - A 35-second, two-clip test sequence exported to WAV and reached `Sequence audio analysis complete` / `Ready 100%`.
@@ -57,7 +72,7 @@ The original timeout came from relying on the completion-event wait path alone. 
 ## Still requires Premiere validation
 
 - The unmodified interview remains a regression case: its extracted WAV produced no qualifying internal pause, which can be correct. Its audible speech quality has not been listening-checked. Cinestudy's larger 17:31 source remained unavailable from Google Drive; no recording from the user is needed for the controlled fixture.
-- The candidate sequence transaction has host proof for one cut, two cuts, and one trimmed-in source case, including one-step sequence-edit Undo/Redo. A production runner with complete preflight, duplicate-submission protection, and partial-candidate failure reporting is not yet implemented or host-validated. Visual/audible playback around both cuts and near the end is pending. Do not connect Apply until those checks pass and partial output cannot be presented as success.
+- The guarded runner has direct host proof for one and two cuts plus a controlled failure/retry. The runner has not completed a live trimmed-source case, and visual/audible playback around both cuts and near the end is pending. Do not enable public Apply until playback passes; resolve the intrinsic-parameter eligibility limitation before claiming broader production readiness.
 - Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
 - Relink the 13 missing source clips in the 5m11s, 29-clip project, then analyze it and compare review timestamps with its real audio. Premiere requested media from `C:\Users\rayya\Downloads`; matching files were not found in Downloads or OneDrive. No analysis was run against offline media.
 - Check Locate at several known sequence times, generated-audio refusal, and stale-result refusal in Premiere.
@@ -73,7 +88,7 @@ The reported floating-window recovery failure remains unconfirmed: the host owns
 
 ## Not implemented
 
-- Timeline editing. Apply to Timeline intentionally remains disabled.
+- Public Apply submission. A guarded candidate-editing service exists, but the panel's Apply button intentionally remains disabled pending playback validation.
 - Transcription or filler-word detection.
 - AI services or provider secrets.
 
