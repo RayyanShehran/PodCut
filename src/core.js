@@ -100,6 +100,38 @@
     return { fps, segments, outputFrames: outputStart + duration - previousEnd };
   }
 
+  function simpleSourceError(source) {
+    if (!source || source.videoTracks !== 1 || source.audioTracks !== 1 || source.captionTracks !== 0)
+      return "Apply supports exactly one video track, one audio track, and no captions.";
+    if (source.videoTransitions || source.audioTransitions || source.otherItems)
+      return "Transitions or other timeline items are not supported.";
+    const video = source.videoItems && source.videoItems[0];
+    const audioItem = source.audioItems && source.audioItems[0];
+    if (!source.videoItems || !source.audioItems || source.videoItems.length !== 1 || source.audioItems.length !== 1 || !video || !audioItem)
+      return "Apply supports one linked V1/A1 clip pair only.";
+    if (!source.mediaPath || source.offline || source.nested || source.multicam || source.merged)
+      return "The source must be one online, ordinary media file.";
+    if (source.videoMuted || source.audioMuted || video.disabled || audioItem.disabled || video.adjustmentLayer)
+      return "Muted, disabled, and adjustment-layer content is not supported.";
+    if (video.speed !== 1 || audioItem.speed !== 1 || video.reversed || audioItem.reversed)
+      return "Speed changes and reversed clips are not supported.";
+    if (source.unsupportedEffects?.length) return `Unsupported clip effects: ${source.unsupportedEffects.join(", ")}.`;
+    if (video.projectItemId !== audioItem.projectItemId || !video.projectItemId)
+      return "Video and audio must come from the same source item.";
+    const same = (a, b) => Math.abs(a - b) < 1e-4;
+    if (![video.start, video.end, video.inPoint, video.outPoint, audioItem.start, audioItem.end,
+      audioItem.inPoint, audioItem.outPoint].every(Number.isFinite) ||
+      !same(video.start, 0) || !same(audioItem.start, 0) ||
+      !same(video.start, audioItem.start) || !same(video.end, audioItem.end) ||
+      !same(video.inPoint, audioItem.inPoint) || !same(video.outPoint, audioItem.outPoint) ||
+      !same(video.end - video.start, video.outPoint - video.inPoint) ||
+      !same(video.end, source.durationSeconds))
+      return "Video/audio timing must match and fill the sequence from frame zero.";
+    if (!Number.isInteger(source.fps) || source.fps <= 0)
+      return "Only integer-frame-rate sequences are supported.";
+    return null;
+  }
+
   function validateRecipe(recipe) {
     const errors = [];
     const finite = (value, min, max, label) => {
@@ -212,5 +244,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });
