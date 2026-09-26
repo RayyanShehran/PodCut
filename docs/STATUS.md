@@ -24,13 +24,15 @@
 - A 35-second, two-clip test sequence exported to WAV and reached `Sequence audio analysis complete` / `Ready 100%`.
 - The bundled 48kHz 16-bit WAV preset and plugin temporary output worked without Adobe Media Encoder.
 - The timeline remained unchanged and Apply to Timeline stayed disabled.
+- The 35.20-second controlled sequence has an approximately 20-second empty lead-in. A repeat Premiere run completed in about two seconds and proposed one silence decision, `00:00:00.000 → 00:00:19.650`; the timeline was not changed.
+- Switching from that completed review to a different project immediately cleared the old review. Activating the other sequence refreshed the panel to `5m11s · 3V / 3A · 29 clips` without a manual refresh.
 
 The original timeout came from relying on the completion-event wait path alone. The current workflow also polls the unique output, requires the export promise to resolve true, parses a complete WAV, and verifies its duration before analysis or deletion.
 
 ## Still requires Premiere validation
 
 - Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
-- Validate the reported 5m11s, 29-clip sequence and compare review timestamps with the real audio.
+- Relink the 13 missing source clips in the 5m11s, 29-clip project, then analyze it and compare review timestamps with its real audio. Premiere requested media from `C:\Users\rayya\Downloads`; matching files were not found in Downloads or OneDrive. No analysis was run against offline media.
 - Check Locate at several known sequence times, generated-audio refusal, and stale-result refusal in Premiere.
 - Check Alt+Tab, minimize/restore, dock/undock, a second monitor if available, and close/reopen during export.
 - Check a long review list, disclosures, and saved settings in a docked panel.
@@ -40,7 +42,7 @@ Browser screenshots and Playwright checks cover 280×400, 320×520, 420×700, an
 
 On September 26, the loaded stylesheet and built source matched the repository. Before the compact-layout change, live UXP measurements at the floating panel's 260×420 content viewport showed a fixed 51px footer, a flex-growing 253px inner scroller, 20px section margins, 42px setting rows, and 16px sequence-card padding. Advanced and Developer were expanded by saved settings, not occupying space while collapsed. After rebuilding and reloading in UDT, the same viewport showed one native `#app` scroller, a 32px preset control, stacked narrow setting rows, and an in-flow action area after the form. A real mouse wheel moved the content immediately; both disclosures collapsed without leftover space; the outlined Analyze button was reachable. Closing the floating panel and reopening through Window > UXP Plugins > PodCut restored visible content, the Custom recipe, collapsed disclosures, and scroll position. Alt+Tab away and back did not blank it. These observations were made with no active sequence. Attempts to resize the floating window did not change its dimensions, so matching before/after captures at 280×400, 320×520, 420×700, and a wider Premiere size remain pending. The manifest's minimum height was lowered from 420px to 400px to permit the requested smallest test, but this final manifest change was not reloaded in Premiere. Opening the recent Test project left Premiere showing “Not Responding”; no docked, minimize/restore, active-sequence, or job-continuity check was completed in that session.
 
-The reported floating-window recovery failure remains unconfirmed: the host owns the title bar, menu reopen worked, and no blank DOM appeared. Offscreen and docked behavior were not reproduced. The normal recovery path and docking/workspace instructions are in README. Adobe documents unreliable Premiere panel hide/destroy callbacks, so PodCut no longer cancels its wait in those hooks; an explicit Stop waiting remains separate from host export cancellation.
+The reported floating-window recovery failure remains unconfirmed: the host owns the title bar, menu reopen worked, and no blank DOM appeared. Offscreen and docked behavior were not reproduced. The normal recovery path and docking/workspace instructions are in README. Adobe documents unreliable Premiere panel hide/destroy callbacks, so PodCut no longer cancels its wait in those hooks; an explicit Stop waiting remains separate from host export cancellation. A later Premiere session did open the Test and Xentra projects successfully, but the earlier narrow-window size and lifecycle checks were not repeated.
 
 ## Not implemented
 

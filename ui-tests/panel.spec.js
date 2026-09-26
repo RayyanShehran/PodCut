@@ -248,3 +248,40 @@ test("show during export leaves one job running and keeps its progress", async (
   await expect(page.locator("#progressStage")).toHaveText("Ready");
   expect(await page.evaluate(() => window.exports)).toBe(1);
 });
+
+test("Premiere project activation clears the old review and refreshes the source", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.hostEvents = {};
+    window.hostCaptures = {};
+    window.require = (id) => {
+      if (id === "uxp") return { entrypoints: { setup: (hooks) => { window.panelHooks = hooks.panels.podcutPanel; } } };
+      if (id === "premierepro") return {
+        Constants: { ProjectEvent: { ACTIVATED: "project-activated", OPENED: "project-opened", CLOSED: "project-closed" }, SequenceEvent: { ACTIVATED: "sequence-activated" } },
+        EventManager: { addGlobalEventListener: (name, handler, capture) => { window.hostEvents[name] = handler; window.hostCaptures[name] = capture; } },
+        Project: { getActiveProject: async () => null }
+      };
+      return null;
+    };
+  });
+  await page.goto(panelUrl);
+  expect(await page.evaluate(() => window.hostCaptures["project-activated"])).toBe(true);
+  await page.evaluate(() => {
+    window.info = { state: "ready", projectId: "p1", projectPath: "one.prproj", sequenceId: "s1", name: "First", durationSeconds: 8,
+      videoTracks: 1, audioTracks: 1, videoClips: 1, audioClips: 1, sequence: {} };
+    PodCutPremiere.activeSequence = async () => window.info;
+    PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(8000).fill(0))] });
+    window.panelHooks.show(document.body);
+  });
+  await expect(page.locator("#sequenceName")).toHaveText("First");
+  await page.locator("#analyze").click();
+  await expect(page.locator("#progressStage")).toHaveText("Ready");
+  await page.evaluate(() => {
+    window.info = { ...window.info, projectId: "p2", projectPath: "two.prproj", sequenceId: "s2", name: "Second" };
+    window.hostEvents["project-activated"]();
+  });
+  await expect(page.locator("#review")).toBeHidden();
+  await expect(page.locator("#progress")).toBeHidden();
+  await expect(page.locator("#sequenceName")).toHaveText("Second");
+  await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "false");
+});

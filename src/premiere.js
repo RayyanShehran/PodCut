@@ -257,6 +257,15 @@
     if (activeExport) activeExport.stop();
   }
 
+  function onActiveSourceChanged(callback) {
+    const ppro = getApi();
+    if (!ppro) return;
+    ppro.EventManager.addGlobalEventListener(ppro.Constants.ProjectEvent.ACTIVATED, callback, true);
+    ppro.EventManager.addGlobalEventListener(ppro.Constants.ProjectEvent.OPENED, callback, true);
+    ppro.EventManager.addGlobalEventListener(ppro.Constants.ProjectEvent.CLOSED, callback);
+    ppro.EventManager.addGlobalEventListener(ppro.Constants.SequenceEvent.ACTIVATED, callback);
+  }
+
   async function setPlayerPosition(sequence, seconds) {
     const ppro = getApi();
     if (!ppro || !sequence || !Number.isFinite(seconds) || seconds < 0) throw new Error("Cannot locate this decision in Premiere.");
@@ -264,5 +273,5 @@
     if (!moved) throw new Error("Premiere did not move the sequence playhead.");
   }
 
-  return { activeSequence, claimExport, createExportWaiter, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
+  return { activeSequence, claimExport, createExportWaiter, onActiveSourceChanged, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
 });

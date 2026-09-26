@@ -11,6 +11,7 @@
   let reviewSource = null;
   let analyzing = false;
   let refreshing = false;
+  let refreshQueued = false;
   let exportWaiting = false;
   let retryBlocked = false;
   let operationId = 0;
@@ -109,6 +110,9 @@
     analysisResult = null;
     reviewSource = null;
     $("#review").hidden = true;
+    $("#progress").hidden = true;
+    $("#toggleDiagnostics").hidden = true;
+    $("#diagnosticText").hidden = true;
   }
 
   function invalidateForRecipe() {
@@ -151,7 +155,8 @@
   }
 
   async function refreshSequence(manual) {
-    if (analyzing || refreshing) return;
+    if (analyzing) return;
+    if (refreshing) { refreshQueued = true; return; }
     refreshing = true;
     const id = ++refreshId;
     syncControls();
@@ -184,7 +189,20 @@
     } finally {
       if (id === refreshId) refreshing = false;
       syncControls();
+      if (!refreshing && refreshQueued) {
+        refreshQueued = false;
+        refreshSequence(false);
+      }
     }
+  }
+
+  function activeSourceChanged() {
+    clearAnalysis();
+    sequenceInfo = null;
+    $("#sequenceName").textContent = "Checking Premiere…";
+    $("#sequenceMeta").textContent = "";
+    syncControls();
+    if (!analyzing) refreshSequence(false);
   }
 
   function renderSummary() {
@@ -457,6 +475,7 @@
     icon.addEventListener("error", () => { icon.hidden = true; $("#refreshFallback").hidden = false; });
     if (icon.complete && icon.naturalWidth > 0) { icon.hidden = false; $("#refreshFallback").hidden = true; }
     renderRecipe();
+    host.onActiveSourceChanged(activeSourceChanged);
     refreshSequence(false);
     try { require("uxp").entrypoints.setup({ panels: { podcutPanel: { show: onShow } } }); }
     catch (error) { console.info("PodCut running outside UXP; panel lifecycle unavailable."); }
