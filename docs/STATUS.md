@@ -21,6 +21,18 @@
 
 ## Host validation completed
 
+### September 27: fresh saved current-service outputs in Premiere
+
+Premiere recovered without a force-kill. In a new disposable project, `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Service Validation 2026-09-27.prproj`, the online 36-second `podcut-internal-pauses.mov` played visibly with active audio meters. The project was saved without changing the earlier proof projects. Visual playback and meter activity are **not** an audible listening check.
+
+The loaded build at `d4a69e6` completed the guarded service directly through the Premiere UXP debugger on the new project's ordinary 30 fps V1/A1 source. Enabled cuts `[10.250,11.800]` and `[22.550,25.450]` produced candidate sequence `podcut-internal-pauses — PodCut` (GUID `78bbfd88-e6eb-41a7-942e-10203cdd718a`), ending at frame 947 (31s17f). Independent host inspection found matching V/A segments at timeline frames `[0,308)`, `[308,631)`, `[631,947)`, mapped to original source `[0,308)`, `[354,677)`, `[764,1080)`. The original sequence remained one `[0,1080)` item on each track. The half-open frame boundaries are intentional.
+
+A separate clone of that source was trimmed to timeline `[0,31]` seconds from media source `[5,36]`, then run through the **same guarded service** with the first cut enabled and the second disabled. It completed as `PodCut TEST service trimmed input — PodCut` (candidate GUID `6d943928-6588-4b19-805e-29129788369a`), 884 frames (29s14f). Host inspection found matching V/A items: timeline `[0,308)` mapped to absolute source `[150,458)`, followed by `[308,884)` mapped to absolute source `[504,1080)`. The trimmed input and original were independently re-read unchanged, and the media was online. Both outputs were saved in the new project.
+
+The real floating PodCut panel analyzed the new original source and reached review. It displayed two enabled rows at `00:00:10.250–00:00:11.800` and `00:00:22.550–00:00:25.450`, a frame-aligned preview of 133 removed frames / 947 retained frames, and a visibly disabled **Apply to Timeline** control. This was panel analysis/preview only: the actual panel Apply handler has **not** been submitted in Premiere. A proposed temporary generated-build unlock was rejected by safety review, so it was not applied or worked around. The public gate remains `false` in source and dist. No new code defect was demonstrated and no feature code changed in this follow-up.
+
+The next required check is human listening on this saved current-service output, `podcut-internal-pauses — PodCut`, around output timecodes `00:00:09:08–00:00:12:08`, `00:00:20:01–00:00:23:01`, and `00:00:29:17–00:00:31:17` (30 fps). Check for clipped speech, clicks, unintended silence, and A/V drift. A separate explicitly approved **test-only** route would be needed to exercise the panel submit handler in Premiere while the production gate stays locked. Neither direct service proof nor browser handler tests substitute for that host-panel submission.
+
 ### September 27 guarded Apply implementation and live host checks
 
 Commits `da96982`, `4ddad5b`, and `baf3afb` added a narrowly scoped Apply runner. The only supported source is one online, ordinary, linked V1/A1 clip pair from the same media item, with matching timing, unit forward speed, no transitions, captions, extra items, added effects, or keyframed parameters. Additional **empty** tracks are allowed; the Premiere fixture has 3V/3A tracks but only V1/A1 populated. Unsupported or changed source snapshots, changed recipes, missing confirmation, and invalid frame plans fail before candidate creation. The panel shows exact frame-aligned removed and retained durations. Its public Apply button is still gated.
@@ -33,7 +45,7 @@ A controlled failure injected immediately before candidate editing left candidat
 
 Automated tests cover eligibility, stale/invalid preflight, staged failures including false return/exception, verification refusal, retry, concurrent/duplicate Apply, and gated browser preview. On September 27, `node --test` reported 40 passed and one optional fixture test skipped; 12 browser UI tests, manifest validation, and build passed. `npm test` could not start because the user's npm launcher path was missing; direct Node test execution worked.
 
-**Playback gate remains open:** no one has audibly and visually checked `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Validation 2026-09-26.prproj`, sequence `PodCut TEST two cuts 31s17f`, at approximately 9–12s, 20–22s, and the final two seconds for clipped speech, clicks, unintended silence, and A/V drift. Public Apply must remain disabled until that check passes. Static changes to Premiere's built-in Motion/Opacity/Volume-type parameters are not currently distinguished from defaults; custom effects and keyframed parameters are rejected. This limits the eligibility guarantee and must be resolved before broader production use.
+**Playback gate remains open:** the fresh saved current-service output above needs an audible continuity check. Public Apply must remain disabled until that check and host panel submission pass. Static changes to Premiere's built-in Motion/Opacity/Volume-type parameters are not currently distinguished from defaults; custom effects and keyframed parameters are rejected. This limits the eligibility guarantee and must be resolved before broader production use.
 
 ### September 27 follow-up: exact current-service scope
 
@@ -80,7 +92,7 @@ The original timeout came from relying on the completion-event wait path alone. 
 ## Still requires Premiere validation
 
 - The unmodified interview remains a regression case: its extracted WAV produced no qualifying internal pause, which can be correct. Its audible speech quality has not been listening-checked. Cinestudy's larger 17:31 source remained unavailable from Google Drive; no recording from the user is needed for the controlled fixture.
-- The guarded runner has direct host proof for one and two cuts plus a controlled failure/retry. The runner has not completed a live trimmed-source case, and visual/audible playback around both cuts and near the end is pending. Do not enable public Apply until playback passes; resolve the intrinsic-parameter eligibility limitation before claiming broader production readiness.
+- The guarded runner has direct host proof for one and two cuts, a controlled failure/retry, and a live trimmed-source case. Audible playback around both cuts and near the end, plus actual panel submit-handler execution, remain pending. Do not enable public Apply until those checks pass; resolve the intrinsic-parameter eligibility limitation before claiming broader production readiness.
 - Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
 - Relink the 13 missing source clips in the 5m11s, 29-clip project, then analyze it and compare review timestamps with its real audio. Premiere requested media from `C:\Users\rayya\Downloads`; matching files were not found in Downloads or OneDrive. No analysis was run against offline media.
 - Check Locate at several known sequence times, generated-audio refusal, and stale-result refusal in Premiere.
