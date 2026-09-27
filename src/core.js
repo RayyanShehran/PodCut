@@ -103,8 +103,8 @@
   function simpleSourceError(source) {
     if (!source || source.videoTracks < 1 || source.audioTracks < 1 || source.captionTracks !== 0)
       return "Apply requires V1, A1, and no caption tracks.";
-    if (source.videoTransitions || source.audioTransitions || source.otherItems)
-      return "Transitions or other timeline items are not supported.";
+    if (source.videoTransitions || source.audioTransitions)
+      return "Transitions are not supported.";
     const video = source.videoItems && source.videoItems[0];
     const audioItem = source.audioItems && source.audioItems[0];
     if (!source.videoItems || !source.audioItems || source.videoItems.length !== 1 || source.audioItems.length !== 1 || !video || !audioItem)

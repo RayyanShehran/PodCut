@@ -5,7 +5,7 @@ const { simpleSourceError, planSimpleEdit } = require('../src/core.js');
 function source() {
   const item = { projectItemId: 'media-1', start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
   return { videoTracks: 1, audioTracks: 1, captionTracks: 0, videoTransitions: 0, audioTransitions: 0,
-    otherItems: 0, videoItems: [{ ...item }], audioItems: [{ ...item }], mediaPath: 'fixture.mov',
+    videoItems: [{ ...item }], audioItems: [{ ...item }], mediaPath: 'fixture.mov',
     offline: false, nested: false, multicam: false, merged: false, videoMuted: false, audioMuted: false,
     unsupportedEffects: [], durationSeconds: 36, fps: 30 };
 }
@@ -31,4 +31,12 @@ test('eligible source still rejects a cut before mutation planning', () => {
   assert.equal(simpleSourceError(candidate), null);
   assert.throws(() => planSimpleEdit({ durationSeconds: 36, sourceInSeconds: 0, fps: 30,
     cuts: [{ cutStart: 0, cutEnd: 2 }] }));
+});
+
+test('preview and feedback counts do not masquerade as timeline content', () => {
+  const candidate = source();
+  candidate.otherItems = 2; // Old snapshots counted Adobe PREVIEW and FEEDBACK as extra edits.
+  assert.equal(simpleSourceError(candidate), null);
+  candidate.audioTransitions = 1;
+  assert.match(simpleSourceError(candidate), /Transitions/);
 });

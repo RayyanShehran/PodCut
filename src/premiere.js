@@ -344,19 +344,18 @@
       const audioTracks = await call("audioTrackCount", () => sequence.getAudioTrackCount());
       const captionTracks = await call("captionTrackCount", () => sequence.getCaptionTrackCount());
       const videos = [], audios = [];
-      let videoTransitions = 0, audioTransitions = 0, otherItems = 0, videoMuted = false, audioMuted = false;
+      // Adobe PREVIEW/FEEDBACK track-item types are not timeline edits; inspect only CLIP and TRANSITION.
+      let videoTransitions = 0, audioTransitions = 0, videoMuted = false, audioMuted = false;
       for (let i = 0; i < videoTracks; i += 1) {
         const track = await call(`videoTrack.${i}`, () => sequence.getVideoTrack(i));
         videos.push(...track.getTrackItems(1, false));
         videoTransitions += track.getTrackItems(2, false).length;
-        otherItems += track.getTrackItems(3, false).length + track.getTrackItems(4, false).length;
         videoMuted ||= await call(`videoTrack.${i}.muted`, () => track.isMuted());
       }
       for (let i = 0; i < audioTracks; i += 1) {
         const track = await call(`audioTrack.${i}`, () => sequence.getAudioTrack(i));
         audios.push(...track.getTrackItems(1, false));
         audioTransitions += track.getTrackItems(2, false).length;
-        otherItems += track.getTrackItems(3, false).length + track.getTrackItems(4, false).length;
         audioMuted ||= await call(`audioTrack.${i}.muted`, () => track.isMuted());
       }
       const videoItems = await Promise.all(videos.map((item, i) => inspectItem(item, `source.video.${i}`, trace)));
@@ -366,7 +365,7 @@
       const source = { projectId: project.guid.toString(), projectPath: project.path,
         sequenceId: guid(sequence), name: sequence.name, durationSeconds: (await call("endTime", () => sequence.getEndTime())).seconds,
         fps: (await call("settings", () => sequence.getSettings())).getVideoFrameRate().value, videoTracks, audioTracks, captionTracks,
-        videoTransitions, audioTransitions, otherItems, videoItems, audioItems, videoMuted, audioMuted,
+        videoTransitions, audioTransitions, videoItems, audioItems, videoMuted, audioMuted,
         mediaPath: media && await call("mediaPath", () => media.getMediaFilePath()), offline: media && await call("offline", () => media.isOffline()),
         nested: media && await call("nested", () => media.isSequence()), multicam: media && await call("multicam", () => media.isMulticamClip()),
         merged: media && await call("merged", () => media.isMergedClip()),
@@ -446,7 +445,7 @@
         const expectedEnd = plan.outputFrames / plan.fps;
         if (after.source.videoTracks !== handle.originalSource.videoTracks ||
             after.source.audioTracks !== handle.originalSource.audioTracks || after.source.captionTracks !== 0 ||
-            after.source.videoTransitions || after.source.audioTransitions || after.source.otherItems ||
+            after.source.videoTransitions || after.source.audioTransitions ||
             Math.abs(after.source.durationSeconds - expectedEnd) > 1e-4 ||
             after.source.videoItems.length !== plan.segments.length || after.source.audioItems.length !== plan.segments.length)
           throw new Error("Candidate structure or duration does not match the frame plan.");
