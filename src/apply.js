@@ -7,25 +7,53 @@
   "use strict";
 
   let running = false;
+  let preparing = false;
   const completed = new Set();
   const id = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requireTrue = (value, stage) => { if (value === false || value == null) throw new Error(`Premiere did not complete ${stage}.`); return value; };
 
-  async function prepare(adapter, review) {
+  async function prepare(adapter, review, onProgress) {
+    if (preparing) throw new Error("An Apply preflight is already running. Wait for its Premiere inspection to finish.");
     if (!review || review.key === "generated" || !review.source || !review.recipe || !review.decisions)
       throw new Error("Analyze a Premiere sequence before applying edits.");
     if (review.currentRecipe !== review.recipe)
       throw new Error("The recipe changed after analysis. Analyze again.");
-    const current = await adapter.inspect();
-    if (current.key !== review.key || JSON.stringify(current.source) !== JSON.stringify(review.source))
-      throw new Error("The source sequence changed after analysis. Analyze again.");
-    const reason = core.simpleSourceError(current.source);
-    if (reason) throw new Error(reason);
-    const cuts = review.decisions.filter(d => d.enabled).map(d => ({ cutStart: d.cutStart, cutEnd: d.cutEnd }));
-    const plan = core.planSimpleEdit({ durationSeconds: current.source.durationSeconds,
-      sourceInSeconds: current.source.videoItems[0].inPoint, fps: current.source.fps, cuts });
-    return { current, plan, cutCount: cuts.length, removedFrames: Math.round(current.source.durationSeconds * plan.fps) - plan.outputFrames,
-      outputName: `${current.source.name} — PodCut` };
+    preparing = true;
+    const runId = id();
+    const started = Date.now();
+    const pendingStages = new Set();
+    let heartbeats = 0;
+    const report = (stage, phase, detail) => {
+      if (phase === "start") pendingStages.add(stage);
+      else if (phase === "complete" || phase === "error") pendingStages.delete(stage);
+      const entry = { runId, stage, phase, elapsedMs: Date.now() - started, ...(detail || {}) };
+      console.info("PodCut preflight", JSON.stringify(entry));
+      if (onProgress) onProgress(entry);
+    };
+    const heartbeat = setInterval(() => {
+      report([...pendingStages].filter(stage => stage !== "inspect").join(", ") || "inspect", "pending");
+      if (++heartbeats === 12) clearInterval(heartbeat); // Keep host work locked, but bound diagnostic output.
+    }, 5000);
+    try {
+      report("inspect", "start");
+      const current = await adapter.inspect(report);
+      report("inspect", "complete");
+      if (current.key !== review.key || JSON.stringify(current.source) !== JSON.stringify(review.source))
+        throw new Error("The source sequence changed after analysis. Analyze again.");
+      const reason = core.simpleSourceError(current.source);
+      if (reason) throw new Error(reason);
+      const cuts = review.decisions.filter(d => d.enabled).map(d => ({ cutStart: d.cutStart, cutEnd: d.cutEnd }));
+      const plan = core.planSimpleEdit({ durationSeconds: current.source.durationSeconds,
+        sourceInSeconds: current.source.videoItems[0].inPoint, fps: current.source.fps, cuts });
+      return { current, plan, cutCount: cuts.length, removedFrames: Math.round(current.source.durationSeconds * plan.fps) - plan.outputFrames,
+        outputName: `${current.source.name} — PodCut` };
+    } catch (error) {
+      report([...pendingStages].filter(stage => stage !== "inspect").join(", ") || "inspect", "error", { error: error.message || String(error) });
+      throw error;
+    } finally {
+      clearInterval(heartbeat);
+      preparing = false;
+    }
   }
 
   async function apply(adapter, review, onStage) {

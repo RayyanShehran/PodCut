@@ -81,3 +81,28 @@ test('concurrent Apply is refused without starting another candidate', async () 
   release();
   assert.equal((await pending).status, 'completed');
 });
+
+test('pending preflight reports its stage and blocks overlapping inspection or mutation', async () => {
+  const f = fixture();
+  let release;
+  let inspections = 0;
+  const events = [];
+  f.adapter.inspect = async (report) => {
+    inspections += 1;
+    report('source.video.0.projectItem', 'start');
+    await new Promise(resolve => { release = resolve; });
+    report('source.video.0.projectItem', 'complete', { durationMs: 1 });
+    return { key: f.review.key, source: f.source };
+  };
+  const pending = service.prepare(f.adapter, f.review, entry => events.push(entry));
+  await assert.rejects(service.prepare(f.adapter, f.review), /preflight is already running/);
+  const denied = await service.apply(f.adapter, f.review);
+  assert.equal(denied.status, 'failed');
+  assert.match(denied.errors.join(' '), /preflight is already running/);
+  assert.equal(inspections, 1);
+  assert.ok(!f.calls.includes('candidate'));
+  release();
+  await pending;
+  assert.ok(events.some(entry => entry.stage === 'source.video.0.projectItem' && entry.phase === 'start' && entry.runId));
+  assert.ok(events.some(entry => entry.stage === 'source.video.0.projectItem' && entry.phase === 'complete'));
+});

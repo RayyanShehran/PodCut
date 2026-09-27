@@ -36,31 +36,45 @@
     catch (error) { return null; }
   }
 
-  async function inspectTrack(sequence, kind, count) {
+  async function traced(trace, stage, work) {
+    if (!trace) return work();
+    const started = Date.now();
+    trace(stage, "start");
+    try {
+      const result = await work();
+      trace(stage, "complete", { durationMs: Date.now() - started });
+      return result;
+    } catch (error) {
+      trace(stage, "error", { durationMs: Date.now() - started, error: error.message || String(error) });
+      throw error;
+    }
+  }
+
+  async function inspectTrack(sequence, kind, count, trace) {
     let clips = 0;
     for (let index = 0; index < count; index += 1) {
-      const track = await sequence[kind === "video" ? "getVideoTrack" : "getAudioTrack"](index);
+      const track = await traced(trace, `active.${kind}Track.${index}`, () => sequence[kind === "video" ? "getVideoTrack" : "getAudioTrack"](index));
       clips += track.getTrackItems(1, false).length;
     }
     return clips;
   }
 
-  async function activeSequence() {
+  async function activeSequence(trace) {
     const ppro = getApi();
     if (!ppro) return { state: "host-unavailable", message: "Open PodCut inside Premiere Pro 26.5 or later." };
-    const project = await ppro.Project.getActiveProject();
+    const project = await traced(trace, "active.project", () => ppro.Project.getActiveProject());
     if (!project) return { state: "no-project", message: "Open a Premiere project to continue." };
-    const sequence = await project.getActiveSequence();
+    const sequence = await traced(trace, "active.sequence", () => project.getActiveSequence());
     if (!sequence) return { state: "no-sequence", message: "Open or select a sequence to continue." };
 
     const [end, videoTracks, audioTracks] = await Promise.all([
-      sequence.getEndTime(),
-      sequence.getVideoTrackCount(),
-      sequence.getAudioTrackCount()
+      traced(trace, "active.endTime", () => sequence.getEndTime()),
+      traced(trace, "active.videoTrackCount", () => sequence.getVideoTrackCount()),
+      traced(trace, "active.audioTrackCount", () => sequence.getAudioTrackCount())
     ]);
     const [videoClips, audioClips] = await Promise.all([
-      inspectTrack(sequence, "video", videoTracks),
-      inspectTrack(sequence, "audio", audioTracks)
+      inspectTrack(sequence, "video", videoTracks, trace),
+      inspectTrack(sequence, "audio", audioTracks, trace)
     ]);
 
     return {
@@ -301,59 +315,61 @@
       }
       return result;
     };
-    const components = async (item) => {
-      const chain = await item.getComponentChain();
+    const components = async (item, label, trace) => {
+      const chain = await traced(trace, `${label}.componentChain`, () => item.getComponentChain());
       if (!chain) return [];
       const names = [];
       for (let i = 0; i < chain.getComponentCount(); i += 1) {
         const component = chain.getComponentAtIndex(i);
-        const name = await component.getDisplayName();
+        const name = await traced(trace, `${label}.component.${i}.name`, () => component.getDisplayName());
         if (!["Motion", "Opacity", "Time Remapping", "Volume", "Channel Volume", "Panner"].includes(name)) names.push(name);
         for (let j = 0; j < component.getParamCount(); j += 1)
           if (component.getParam(j).isTimeVarying()) names.push(`${name} keyframes`);
       }
       return names;
     };
-    const inspectItem = async (item) => {
-      const projectItem = await item.getProjectItem();
-      return { projectItemId: projectItem.getId(), start: (await item.getStartTime()).seconds,
-        end: (await item.getEndTime()).seconds, inPoint: (await item.getInPoint()).seconds,
-        outPoint: (await item.getOutPoint()).seconds, trackIndex: await item.getTrackIndex(), speed: await item.getSpeed(),
-        disabled: await item.isDisabled(), reversed: Boolean(await item.isSpeedReversed()),
-        adjustmentLayer: Boolean(item.isAdjustmentLayer && await item.isAdjustmentLayer()),
-        effects: await components(item) };
+    const inspectItem = async (item, label, trace) => {
+      const call = (name, work) => traced(trace, `${label}.${name}`, work);
+      const projectItem = await call("projectItem", () => item.getProjectItem());
+      return { projectItemId: projectItem.getId(), start: (await call("start", () => item.getStartTime())).seconds,
+        end: (await call("end", () => item.getEndTime())).seconds, inPoint: (await call("inPoint", () => item.getInPoint())).seconds,
+        outPoint: (await call("outPoint", () => item.getOutPoint())).seconds, trackIndex: await call("trackIndex", () => item.getTrackIndex()), speed: await call("speed", () => item.getSpeed()),
+        disabled: await call("disabled", () => item.isDisabled()), reversed: Boolean(await call("reversed", () => item.isSpeedReversed())),
+        adjustmentLayer: Boolean(item.isAdjustmentLayer && await call("adjustmentLayer", () => item.isAdjustmentLayer())),
+        effects: await components(item, label, trace) };
     };
-    const inspectSequence = async (project, sequence) => {
-      const videoTracks = await sequence.getVideoTrackCount();
-      const audioTracks = await sequence.getAudioTrackCount();
-      const captionTracks = await sequence.getCaptionTrackCount();
+    const inspectSequence = async (project, sequence, trace) => {
+      const call = (name, work) => traced(trace, `source.${name}`, work);
+      const videoTracks = await call("videoTrackCount", () => sequence.getVideoTrackCount());
+      const audioTracks = await call("audioTrackCount", () => sequence.getAudioTrackCount());
+      const captionTracks = await call("captionTrackCount", () => sequence.getCaptionTrackCount());
       const videos = [], audios = [];
       let videoTransitions = 0, audioTransitions = 0, otherItems = 0, videoMuted = false, audioMuted = false;
       for (let i = 0; i < videoTracks; i += 1) {
-        const track = await sequence.getVideoTrack(i);
+        const track = await call(`videoTrack.${i}`, () => sequence.getVideoTrack(i));
         videos.push(...track.getTrackItems(1, false));
         videoTransitions += track.getTrackItems(2, false).length;
         otherItems += track.getTrackItems(3, false).length + track.getTrackItems(4, false).length;
-        videoMuted ||= await track.isMuted();
+        videoMuted ||= await call(`videoTrack.${i}.muted`, () => track.isMuted());
       }
       for (let i = 0; i < audioTracks; i += 1) {
-        const track = await sequence.getAudioTrack(i);
+        const track = await call(`audioTrack.${i}`, () => sequence.getAudioTrack(i));
         audios.push(...track.getTrackItems(1, false));
         audioTransitions += track.getTrackItems(2, false).length;
         otherItems += track.getTrackItems(3, false).length + track.getTrackItems(4, false).length;
-        audioMuted ||= await track.isMuted();
+        audioMuted ||= await call(`audioTrack.${i}.muted`, () => track.isMuted());
       }
-      const videoItems = await Promise.all(videos.map(inspectItem));
-      const audioItems = await Promise.all(audios.map(inspectItem));
-      const projectItem = videos.length ? await videos[0].getProjectItem() : null;
+      const videoItems = await Promise.all(videos.map((item, i) => inspectItem(item, `source.video.${i}`, trace)));
+      const audioItems = await Promise.all(audios.map((item, i) => inspectItem(item, `source.audio.${i}`, trace)));
+      const projectItem = videos.length ? await call("mediaItem", () => videos[0].getProjectItem()) : null;
       const media = projectItem && ppro.ClipProjectItem.cast(projectItem);
       const source = { projectId: project.guid.toString(), projectPath: project.path,
-        sequenceId: guid(sequence), name: sequence.name, durationSeconds: (await sequence.getEndTime()).seconds,
-        fps: (await sequence.getSettings()).getVideoFrameRate().value, videoTracks, audioTracks, captionTracks,
+        sequenceId: guid(sequence), name: sequence.name, durationSeconds: (await call("endTime", () => sequence.getEndTime())).seconds,
+        fps: (await call("settings", () => sequence.getSettings())).getVideoFrameRate().value, videoTracks, audioTracks, captionTracks,
         videoTransitions, audioTransitions, otherItems, videoItems, audioItems, videoMuted, audioMuted,
-        mediaPath: media && await media.getMediaFilePath(), offline: media && await media.isOffline(),
-        nested: media && await media.isSequence(), multicam: media && await media.isMulticamClip(),
-        merged: media && await media.isMergedClip(),
+        mediaPath: media && await call("mediaPath", () => media.getMediaFilePath()), offline: media && await call("offline", () => media.isOffline()),
+        nested: media && await call("nested", () => media.isSequence()), multicam: media && await call("multicam", () => media.isMulticamClip()),
+        merged: media && await call("merged", () => media.isMergedClip()),
         unsupportedEffects: [...videoItems, ...audioItems].flatMap(item => item.effects) };
       return { source, media, videos, audios };
     };
@@ -364,10 +380,11 @@
       return handle;
     };
     return {
-      async inspect() {
-        const current = await activeSequence();
+      async inspect(trace) {
+        const current = await activeSequence(trace);
         if (current.state !== "ready") throw new Error(current.message || "No active sequence.");
-        const inspected = await inspectSequence(current.project, current.sequence);
+        if (trace) trace("active.ready", "complete", { projectId: current.projectId, sequenceId: current.sequenceId, videoClips: current.videoClips, audioClips: current.audioClips });
+        const inspected = await inspectSequence(current.project, current.sequence, trace);
         return { key: core.sequenceKey(current), source: inspected.source,
           handles: { project: current.project, original: current.sequence, media: inspected.media } };
       },

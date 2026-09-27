@@ -14,6 +14,8 @@
   let analyzing = false;
   let applying = false;
   let applyCheckId = 0;
+  let applyCheckPending = false;
+  let applyCheckQueued = false;
   let readyApply = null;
   let lastCompletedApply = null;
   let refreshing = false;
@@ -268,9 +270,14 @@
     if (reviewSource.applyError || !reviewSource.applySnapshot) {
       $("#applyStatus").textContent = `Unsupported: ${reviewSource.applyError || "Source inspection unavailable."}`; return;
     }
+    if (applyCheckPending) { applyCheckQueued = true; return; }
+    applyCheckPending = true;
     $("#applyStatus").textContent = "Checking source layout and frame plan…";
     try {
-      const prepared = await applyService.prepare(host.applyAdapter(), applyReview(false));
+      const prepared = await applyService.prepare(host.applyAdapter(), applyReview(false), (entry) => {
+        if (id === applyCheckId && !applying && (entry.phase === "start" || entry.phase === "pending"))
+          $("#applyStatus").textContent = `Checking ${entry.stage}… ${Math.round(entry.elapsedMs / 1000)}s (run ${entry.runId}).`;
+      });
       if (id !== applyCheckId || applying) return;
       readyApply = prepared;
       const removed = (prepared.removedFrames / prepared.plan.fps).toFixed(3);
@@ -280,6 +287,9 @@
     } catch (error) {
       if (id !== applyCheckId || applying) return;
       $("#applyStatus").textContent = `Unsupported or stale: ${error.message || error}`;
+    } finally {
+      applyCheckPending = false;
+      if (applyCheckQueued) { applyCheckQueued = false; refreshApplyState(); }
     }
   }
 
