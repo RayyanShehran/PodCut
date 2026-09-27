@@ -21,6 +21,14 @@
 
 ## Host validation completed
 
+### September 27: actual panel submission on a disposable Premiere project
+
+An isolated, non-shipping UXP build with a distinct plugin ID exercised the real Premiere panel confirmation and submission handlers. Its one temporary Apply unlock was guarded by the disposable project's path/GUID and the original sequence GUID. The production `src/main.js` and `dist/src/main.js` gates remain `false`.
+
+On the saved 36-second `podcut-internal-pauses` source, the panel reviewed cuts `10.250–11.800` and `22.550–25.450`, confirmed 133 removed / 947 retained frames, and submitted them. A rapid double-click on **Create new sequence** produced exactly one new sequence: GUID `791b6de2-7d0f-4f71-adbf-26bc23d0d293` (project sequence count 4 → 5). Premiere opened it at 31.566667 seconds (frame 947). Independent UXP inspection found three contiguous items on both V1 and A1, at `[0,308)`, `[308,631)`, and `[631,947)` timeline frames. Their source media ranges correspond to `[0,308)`, `[354,677)`, and `[764,1080)`; the service's full per-item candidate verification also passed. The original remained 36 seconds with one `[0,36]` item on each track. The new candidate's duration and all V/A item timings matched the separately saved current-service listening candidate (`78bbfd88-e6eb-41a7-942e-10203cdd718a`). No new listening windows are needed.
+
+During Apply, the panel locks conflicting controls. A small follow-up fix keeps its verified-completion message visible after Premiere switches to the new sequence; this was observed in the same floating host panel. Earlier unsaved exploratory outputs were explicitly reverted, leaving the saved fixture intact before this clean run. The final panel candidate is currently **unsaved** in Premiere; the previously saved matching candidate remains the listening target. Reanalyzing the source deliberately permits a new output, so that is not treated as a duplicate submission. No audible judgment has been reported. The only remaining public-Apply gate is the user's listening check below.
+
 ### September 27: fresh saved current-service outputs in Premiere
 
 Premiere recovered without a force-kill. In a new disposable project, `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Service Validation 2026-09-27.prproj`, the online 36-second `podcut-internal-pauses.mov` played visibly with active audio meters. The project was saved without changing the earlier proof projects. Visual playback and meter activity are **not** an audible listening check.
@@ -92,7 +100,7 @@ The original timeout came from relying on the completion-event wait path alone. 
 ## Still requires Premiere validation
 
 - The unmodified interview remains a regression case: its extracted WAV produced no qualifying internal pause, which can be correct. Its audible speech quality has not been listening-checked. Cinestudy's larger 17:31 source remained unavailable from Google Drive; no recording from the user is needed for the controlled fixture.
-- The guarded runner has direct host proof for one and two cuts, a controlled failure/retry, and a live trimmed-source case. Audible playback around both cuts and near the end, plus actual panel submit-handler execution, remain pending. Do not enable public Apply until those checks pass; resolve the intrinsic-parameter eligibility limitation before claiming broader production readiness.
+- The guarded runner has direct host proof for one and two cuts, a controlled failure/retry, a live trimmed-source case, and actual panel submission. Audible playback around both cuts and near the end remains pending. Do not enable public Apply until that check passes; resolve the intrinsic-parameter eligibility limitation before claiming broader production readiness.
 - Repeat analysis after reopening the panel and after Stop waiting / timeout recovery.
 - Relink the 13 missing source clips in the 5m11s, 29-clip project, then analyze it and compare review timestamps with its real audio. Premiere requested media from `C:\Users\rayya\Downloads`; matching files were not found in Downloads or OneDrive. No analysis was run against offline media.
 - Check Locate at several known sequence times, generated-audio refusal, and stale-result refusal in Premiere.

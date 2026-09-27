@@ -15,6 +15,7 @@
   let applying = false;
   let applyCheckId = 0;
   let readyApply = null;
+  let lastCompletedApply = null;
   let refreshing = false;
   let refreshQueued = false;
   let exportWaiting = false;
@@ -148,6 +149,7 @@
       setActionDisabledControl(control, busy || (control.dataset.locateId && reviewSource?.key === "generated")));
     const ready = sequenceInfo && sequenceInfo.state === "ready" && sequenceInfo.audioTracks > 0;
     setActionDisabled("#analyze", applying || (analyzing ? !exportWaiting : retryBlocked || refreshing || !ready));
+    setActionDisabled("#apply", busy || !readyApply || !PUBLIC_APPLY_ENABLED);
     $("#analyze").textContent = analyzing ? (exportWaiting ? "Stop waiting" : "Analyzing…") : "Analyze Sequence";
   }
 
@@ -190,10 +192,11 @@
       $("#sequenceMeta").textContent = ready
         ? `${core.formatDuration(next.durationSeconds)} · ${next.videoTracks}V / ${next.audioTracks}A · ${next.videoClips + next.audioClips} clips`
         : next.message;
+      if (manual) lastCompletedApply = null;
       if (manual && retryBlocked) retryBlocked = false;
       if (stale) message("Active sequence or available metadata changed. Analyze again.", "warning");
       else if (ready && next.audioTracks === 0) message("This sequence has no audio tracks to analyze.", "warning");
-      else if (!analysisResult) message("", "");
+      else if (!analysisResult && !lastCompletedApply) message("", "");
     } catch (error) {
       if (id !== refreshId) return;
       sequenceInfo = { state: "error" };
@@ -300,6 +303,7 @@
       if (operation.status === "completed") {
         $("#progress").hidden = true;
         $("#applyStatus").textContent = `Completed: ${operation.outputName} (${operation.candidateSequenceId}).`;
+        lastCompletedApply = operation.candidateSequenceId;
         message(`Verified new sequence “${operation.outputName}”. The source is unchanged. Undo is not one-step: the first Undo reverses output naming; the candidate edit, subclips, and clone have separate history entries.`, "");
       } else {
         $("#progress").hidden = true;
@@ -339,6 +343,7 @@
     const errors = core.validateRecipe(recipe);
     if (errors.length) return message(errors[0], "error");
     const id = ++operationId;
+    lastCompletedApply = null;
     const recipeSnapshot = clone(recipe);
     analyzing = true;
     syncControls();
@@ -375,6 +380,7 @@
     const errors = core.validateRecipe(recipe);
     if (errors.length) return message(errors[0], "error");
     if (!sequenceInfo || sequenceInfo.state !== "ready") return;
+    lastCompletedApply = null;
     const id = ++operationId;
     const recipeSnapshot = clone(recipe);
     const source = { recipe: JSON.stringify(recipeSnapshot), sequence: sequenceInfo.sequence, key: sequenceKey(sequenceInfo) };
