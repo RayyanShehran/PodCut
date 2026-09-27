@@ -1,6 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { pathToFileURL } = require("node:url");
 const { resolve } = require("node:path");
+const { readFileSync } = require("node:fs");
 
 const panelUrl = pathToFileURL(resolve(__dirname, "..", "index.html")).href;
 const viewports = [
@@ -311,4 +312,78 @@ test("review shows frame-aligned Apply preview but keeps the public action gated
   await page.locator("#decisions input").uncheck();
   await expect(page.locator("#applyStatus")).toContainText("at least one cut");
   await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
+});
+
+test("isolated panel Apply route confirms, locks double clicks, and reports the separate output", async ({ page }) => {
+  // Test-only script substitution: the built plugin keeps PUBLIC_APPLY_ENABLED=false.
+  const script = readFileSync(resolve(__dirname, "..", "src", "main.js"), "utf8");
+  expect(script).toContain("const PUBLIC_APPLY_ENABLED = false;");
+  await page.route("**/src/main.js", (route) => route.fulfill({ contentType: "text/javascript",
+    body: script.replace("const PUBLIC_APPLY_ENABLED = false;", "const PUBLIC_APPLY_ENABLED = true;") }));
+  await page.goto(panelUrl);
+  await page.evaluate(() => {
+    const item = { projectItemId: "media", start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
+    window.source = { projectId: "p", sequenceId: "s", name: "Interview", durationSeconds: 36, fps: 30,
+      videoTracks: 1, audioTracks: 1, captionTracks: 0, videoTransitions: 0, audioTransitions: 0, otherItems: 0,
+      videoItems: [{ ...item }], audioItems: [{ ...item }], mediaPath: "fixture.mov", offline: false,
+      nested: false, multicam: false, merged: false, videoMuted: false, audioMuted: false, unsupportedEffects: [] };
+    window.info = { state: "ready", projectId: "p", sequenceId: "s", name: "Interview", durationSeconds: 36,
+      videoTracks: 1, audioTracks: 1, videoClips: 1, audioClips: 1, sequence: {} };
+    window.calls = [];
+    PodCutPremiere.activeSequence = async () => window.info;
+    PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
+    PodCutPremiere.applyAdapter = () => ({
+      inspect: async () => ({ key: PodCutCore.sequenceKey(window.info), source: window.source }),
+      createCandidate: async () => { window.calls.push("candidate"); return new Promise(resolveCandidate => { window.resolveCandidate = resolveCandidate; }); },
+      createSubclip: async () => { window.calls.push("subclip"); return "subclip"; },
+      editCandidate: async () => { window.calls.push("edit"); if (window.failEdit) { window.failEdit = false; throw Error("injected edit failure"); } return true; },
+      verifyCandidate: async () => { window.calls.push("verify"); return true; },
+      nameCandidate: async (_, name) => { window.calls.push(name.startsWith("PodCut FAILED") ? "failed-label" : "final-label"); return true; },
+      presentCandidate: async () => true,
+      reconcile: async () => {}, restoreOriginal: async () => {}
+    });
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(36000).fill(0.2))] });
+    PodCutCore.analyzeAudioAsync = async () => ({ durationSeconds: 36, silenceCount: 2, longPauseCount: 0,
+      decisions: [{ id: "one", type: "silence", enabled: true, cutStart: 10.25, cutEnd: 11.8, removeSeconds: 1.55 },
+        { id: "two", type: "silence", enabled: true, cutStart: 22.55, cutEnd: 25.45, removeSeconds: 2.9 }] });
+  });
+  await page.locator("#refreshSequence").click();
+  await page.locator("#analyze").click();
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "false");
+  await page.locator("#decisions input").last().uncheck();
+  await expect(page.locator("#applyStatus")).toContainText("1 cuts; remove 46 frames");
+  await page.locator("#apply").click();
+  await expect(page.locator("#applyConfirmationText")).toContainText("Interview — PodCut");
+  await page.locator("#confirmApply").click();
+  await page.evaluate(() => document.querySelector("#confirmApply").click());
+  await expect(page.locator("#preset")).toBeDisabled();
+  expect(await page.evaluate(() => window.calls)).toEqual(["candidate"]);
+  await page.evaluate(() => window.resolveCandidate("candidate-id"));
+  await expect(page.locator("#applyStatus")).toContainText("Completed: Interview — PodCut (candidate-id)");
+  await expect(page.locator("#message")).toContainText("first Undo reverses output naming");
+  expect(await page.evaluate(() => window.calls)).toEqual(["candidate", "subclip", "edit", "verify", "final-label"]);
+  await page.evaluate(() => { window.info = { ...window.info, sequenceId: "other" }; });
+  await page.locator("#refreshSequence").click();
+  await expect(page.locator("#review")).toBeHidden();
+  expect(await page.evaluate(() => window.calls.filter(x => x === "candidate").length)).toBe(1);
+  await page.evaluate(() => { window.info = { ...window.info, sequenceId: "s" }; });
+  await page.locator("#refreshSequence").click();
+  await page.locator("#analyze").click();
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "false");
+  await page.locator("#decisions input").evaluateAll(inputs => inputs.forEach(input => { input.checked = false; input.dispatchEvent(new Event("change", { bubbles: true })); }));
+  await expect(page.locator("#applyStatus")).toContainText("at least one cut");
+  await page.locator("#decisions input").first().check();
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "false");
+  await page.evaluate(() => { window.failEdit = true; });
+  await page.locator("#apply").click();
+  await page.locator("#confirmApply").click();
+  await page.evaluate(() => window.resolveCandidate("failed-id"));
+  await expect(page.locator("#applyStatus")).toContainText("Partial candidate: failed-id");
+  await expect(page.locator("#message")).toContainText("retry creates a fresh candidate");
+  expect(await page.evaluate(() => window.calls.includes("failed-label"))).toBe(true);
+  await page.locator("#apply").click();
+  await page.locator("#confirmApply").click();
+  await page.evaluate(() => window.resolveCandidate("retry-id"));
+  await expect(page.locator("#applyStatus")).toContainText("Completed: Interview — PodCut (retry-id)");
+  expect(await page.evaluate(() => window.calls.filter(x => x === "candidate").length)).toBe(3);
 });

@@ -300,11 +300,11 @@
       if (operation.status === "completed") {
         $("#progress").hidden = true;
         $("#applyStatus").textContent = `Completed: ${operation.outputName} (${operation.candidateSequenceId}).`;
-        message(`Verified new sequence “${operation.outputName}”. One Undo reverses its edit transaction; clone, subclips, naming, and opening are separate steps.`, "");
+        message(`Verified new sequence “${operation.outputName}”. The source is unchanged. Undo is not one-step: the first Undo reverses output naming; the candidate edit, subclips, and clone have separate history entries.`, "");
       } else {
         $("#progress").hidden = true;
         $("#applyStatus").textContent = `Failed operation ${operation.id}. Partial candidate: ${operation.candidateSequenceId || "not identified"}. Subclips: ${operation.subclips.map(s => s.id || s).join(", ") || "none"}.`;
-        message(`${operation.errors.join(" ")} Original review retained; retry creates a fresh candidate.`, "error");
+        message(`${operation.errors.join(" ")} Original review retained. Inspect the labeled partial candidate and subclips in Premiere; retry creates a fresh candidate.`, "error");
       }
     } catch (error) {
       $("#progress").hidden = true;
