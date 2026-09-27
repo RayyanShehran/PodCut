@@ -1,5 +1,13 @@
 # PodCut status
 
+## Listening gate failed (September 28)
+
+The user heard extremely loud, muffled speech in the saved edited sequence **and in the unchanged downloaded Wikimedia interview outside Premiere** (00:04–00:14). This locates the reported quality problem in the test source, before fixture generation, detection, or Apply. Objective checks found the source's first speech segment near -8.6 dBFS RMS with decoded peaks above 0 dBFS; conversion to 16-bit PCM saturated 2,854 of 960,000 samples. The generated fixture's first ten seconds matched the same source segment sample-for-sample. Premiere's saved candidate export closely matched the corresponding fixture speech sections, without unexpected gain. Signal checks do not establish audible quality.
+
+The old source, fixture, and saved project remain untouched. The replacement controlled fixture is `C:\Projects\PodCut-TestMedia\Fixtures\podcut-nasa-internal-pauses.mov`, built from [NASA's Piers Sellers interview](https://svs.gsfc.nasa.gov/12275) at `C:\Projects\PodCut-TestMedia\NASA\Piers_Sellers_JSC_2016_interview.webm` (SHA-256 `CD65F4BF7A36DFACBEC57A45BCB317E4A22E29B7A5CAD572764F748ECF5D5195`). It uses contiguous source ranges 20–30, 30–40, and 40–50 seconds with two inserted silent holds. The three source speech ranges measure roughly -24 to -27 dBFS RMS and peak below -4 dBFS, with no non-finite samples. `scripts/make-internal-pause-fixture.ps1` now defaults to this source and a distinct output name. The optional fixture test rejects the old excessive peak/RMS levels and checks the two intended pauses under Natural settings.
+
+A new disposable Premiere project, `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Clean Audio Validation 2026-09-28.prproj`, imports the new 36-second fixture as an ordinary linked V1/A1 sequence. Premiere panel analysis worked, but inherited **Custom** settings proposed a third end-of-sequence silence; this must be disabled or the recipe reset before a corrected candidate is saved. No corrected listening candidate or new human playback PASS exists yet. Public Apply remains disabled. The old listening windows are invalid for release.
+
 ## Implemented
 
 - Premiere UXP manifest v5 targeting Premiere Pro 26.5+

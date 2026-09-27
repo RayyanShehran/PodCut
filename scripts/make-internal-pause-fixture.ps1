@@ -1,7 +1,7 @@
 param(
   [string]$Ffmpeg = 'C:\Projects\PodCut-TestMedia\Tools\ffmpeg-9.0.2\ffmpeg.exe',
-  [string]$Source = 'C:\Projects\PodCut-TestMedia\Wikimedia\Entrevista (Parte 1).webm',
-  [string]$Output = 'C:\Projects\PodCut-TestMedia\Fixtures\podcut-internal-pauses.mov'
+  [string]$Source = 'C:\Projects\PodCut-TestMedia\NASA\Piers_Sellers_JSC_2016_interview.webm',
+  [string]$Output = 'C:\Projects\PodCut-TestMedia\Fixtures\podcut-nasa-internal-pauses.mov'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,12 +13,12 @@ New-Item -ItemType Directory -Force -Path $folder | Out-Null
 # Controlled fixture derived from real interview footage. Each inserted pause
 # freezes the preceding frame and appends silent PCM; no source media is muted.
 $filters = @(
-  '[0:v]trim=start=4:end=14,setpts=PTS-STARTPTS,fps=30,scale=1280:720,tpad=stop_mode=clone:stop_duration=2,format=yuv420p[v0]'
-  '[0:a]atrim=start=4:end=14,asetpts=PTS-STARTPTS,aresample=48000,apad=pad_dur=2[a0]'
-  '[0:v]trim=start=20:end=30,setpts=PTS-STARTPTS,fps=30,scale=1280:720,tpad=stop_mode=clone:stop_duration=4,format=yuv420p[v1]'
-  '[0:a]atrim=start=20:end=30,asetpts=PTS-STARTPTS,aresample=48000,apad=pad_dur=4[a1]'
-  '[0:v]trim=start=36:end=46,setpts=PTS-STARTPTS,fps=30,scale=1280:720,format=yuv420p[v2]'
-  '[0:a]atrim=start=36:end=46,asetpts=PTS-STARTPTS,aresample=48000[a2]'
+  '[0:v]trim=start=20:end=30,setpts=PTS-STARTPTS,fps=30,scale=1280:720,tpad=stop_mode=clone:stop_duration=2,format=yuv420p[v0]'
+  '[0:a]atrim=start=20:end=30,asetpts=PTS-STARTPTS,aresample=48000,apad=pad_dur=2[a0]'
+  '[0:v]trim=start=30:end=40,setpts=PTS-STARTPTS,fps=30,scale=1280:720,tpad=stop_mode=clone:stop_duration=4,format=yuv420p[v1]'
+  '[0:a]atrim=start=30:end=40,asetpts=PTS-STARTPTS,aresample=48000,apad=pad_dur=4[a1]'
+  '[0:v]trim=start=40:end=50,setpts=PTS-STARTPTS,fps=30,scale=1280:720,format=yuv420p[v2]'
+  '[0:a]atrim=start=40:end=50,asetpts=PTS-STARTPTS,aresample=48000[a2]'
   '[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[v][a]'
 ) -join ';'
 
