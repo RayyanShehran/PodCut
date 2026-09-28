@@ -6,6 +6,7 @@
   const audio = globalThis.PodCutAudio;
   const assistedState = globalThis.PodCutAssistedState;
   const PUBLIC_APPLY_ENABLED = false; // Faithful linked-pair preservation and comprehensive freshness remain unverified.
+  const ASSISTED_PANEL_ENABLED = false; // Native floating reopen did not deliver the freshness hook.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");
@@ -166,7 +167,8 @@
     $("#workRecovery").hidden = !interruptedWork;
     setActionDisabled("#recoverWork", busy);
     $("#assistedOptIn").disabled = busy || Boolean(interruptedWork);
-    const reason = assistedState.scopeError(readyApply);
+    const reason = ASSISTED_PANEL_ENABLED ? assistedState.scopeError(readyApply) :
+      "Assisted creation is temporarily locked: native panel-reopening freshness validation is incomplete. Analysis and saved-draft checks remain available.";
     $("#assistedEligibility").textContent = reason || "Experimental: manual linking and playback validation required. Undo is not one-step.";
     const assistedBlocked = busy || interruptedWork || reason || !$("#assistedOptIn").checked;
     setActionDisabled("#prepareAssisted", assistedBlocked);
@@ -362,6 +364,7 @@
   }
 
   function confirmAssisted() {
+    if (!ASSISTED_PANEL_ENABLED) return;
     if (analyzing || applying || interruptedWork || !reviewSource || !$("#assistedOptIn").checked || assistedState.scopeError(readyApply)) return;
     assistedConfirmationReview = JSON.stringify(applyReview(false));
     $("#assistedConfirmationText").textContent = `Prepare a separate assisted draft from “${readyApply.current.source.name}”? Only the one enabled cut removes ${readyApply.removedFrames} frames; retain ${readyApply.plan.outputFrames} frames. The original stays unchanged. The cloned tail requires manual native A/V linking. Built-in effect values, mixer/routing and external-media freshness remain unverified. This is an experimental draft, not finished output. Full-workflow Undo is not one-step.`;
@@ -369,6 +372,7 @@
   }
 
   async function runAssisted() {
+    if (!ASSISTED_PANEL_ENABLED) return;
     if (analyzing || applying || interruptedWork || !reviewSource || !$("#assistedOptIn").checked || assistedState.scopeError(readyApply) ||
         !assistedConfirmationReview || assistedConfirmationReview !== JSON.stringify(applyReview(false))) return;
     const review = clone(applyReview(true));
@@ -611,6 +615,7 @@
   }
 
   function onShow(rootNode) {
+    console.info("PodCut panel lifecycle", "show");
     const app = $("#app");
     if (rootNode && rootNode.appendChild && rootNode.contains && !rootNode.contains(app)) rootNode.appendChild(app);
     app.hidden = false;
@@ -769,7 +774,8 @@
     renderDraft();
     const disposeSourceWatch = host.onActiveSourceChanged(activeSourceChanged);
     refreshSequence(false);
-    try { require("uxp").entrypoints.setup({ plugin: { create() {}, destroy() {
+    try { require("uxp").entrypoints.setup({ plugin: { create() { console.info("PodCut panel lifecycle", "plugin-create"); }, destroy() {
+      console.info("PodCut panel lifecycle", "plugin-destroy");
       operationId += 1; refreshId += 1; applyCheckId += 1; draftCheckId += 1;
       disposeSourceWatch?.(); clearTimer(); // Journal survives even if this callback is not delivered.
     } }, panels: { podcutPanel: { show: onShow } } }); }

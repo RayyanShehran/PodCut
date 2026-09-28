@@ -538,9 +538,29 @@ async function wireAssistedPanel(page) {
   await expect(page.locator('#sequenceName')).toHaveText('Interview');
 }
 
-async function assistedHooks(page) {
+async function assistedHooks(page, isolated = true) {
+  if (isolated) {
+    const script = readFileSync(resolve(__dirname, "..", "src", "main.js"), "utf8");
+    expect(script).toContain("const ASSISTED_PANEL_ENABLED = false;");
+    // Non-shipping handler checks only; no runtime or persisted production bypass.
+    await page.route("**/src/main.js", route => route.fulfill({ contentType: "text/javascript",
+      body: script.replace("const ASSISTED_PANEL_ENABLED = false;", "const ASSISTED_PANEL_ENABLED = true;") }));
+  }
   await page.addInitScript(() => { window.require = id => id==='uxp' ? {entrypoints:{setup:h=>{window.hooks=h;}}} : null; });
 }
+
+test('normal assisted panel cannot create drafts while native reopening freshness is unresolved', async ({page}) => {
+  await assistedHooks(page, false); await page.goto(panelUrl); await wireAssistedPanel(page);
+  await page.locator('#analyze').click();
+  await page.locator('#decisions input').last().uncheck();
+  await page.locator('#assistedOptIn').check();
+  await expect(page.locator('#assistedEligibility')).toContainText('temporarily locked');
+  await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','true');
+  await page.evaluate(()=>{document.querySelector('#prepareAssisted').click();document.querySelector('#confirmAssisted').click();});
+  await expect(page.locator('#assistedConfirmation')).toBeHidden();
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(0);
+  expect(await page.evaluate(()=>localStorage.getItem(PodCutAssistedState.workKey))).toBeNull();
+});
 
 test('distinct experimental panel flow enforces opt-in/one cut, duplicate lock and reconciled handoff after reload', async ({page}) => {
   await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
