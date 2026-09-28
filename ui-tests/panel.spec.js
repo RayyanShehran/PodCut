@@ -219,6 +219,13 @@ test("show is repeatable; stale sequence blocks review and locate", async ({ pag
   await expect(page.locator("#review")).toBeVisible();
   await page.locator(".locate").first().click();
   expect(await page.evaluate(() => window.moves.length)).toBe(1);
+  // Even identical metadata is not proof that hidden-panel audio stayed unchanged.
+  await page.evaluate(() => window.panelHooks.show(document.body));
+  await expect(page.locator("#review")).toBeHidden();
+  await expect(page.locator("#message")).toContainText("establish a fresh review");
+  await expect(page.locator("#workRecovery")).toBeHidden();
+  await page.locator("#analyze").click();
+  await expect(page.locator("#review")).toBeVisible();
   await page.evaluate(() => { window.info = { ...window.info, audioClips: 2 }; });
   await page.locator("#refreshSequence").click();
   await expect(page.locator("#review")).toBeHidden();

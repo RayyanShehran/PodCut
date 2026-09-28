@@ -614,6 +614,11 @@
     const app = $("#app");
     if (rootNode && rootNode.appendChild && rootNode.contains && !rootNode.contains(app)) rootNode.appendChild(app);
     app.hidden = false;
+    // Metadata and an unchanged event revision cannot establish audio freshness while hidden.
+    if (!analyzing && !applying && reviewSource && reviewSource.key !== "generated") {
+      clearAnalysis();
+      message("Panel reopened. Analyze again to establish a fresh review.", "warning");
+    }
     if (!analyzing && !applying) refreshSequence(false);
   }
 
