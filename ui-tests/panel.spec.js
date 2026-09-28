@@ -505,7 +505,16 @@ async function wireAssistedPanel(page) {
     window.assistedSubmissions = 0;
     PodCutPremiere.activeSequence = async () => assistedInfo;
     PodCutPremiere.sourceRevision = () => 1;
-    PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
+    window.assistedExports = 0;
+    window.assistedWav = () => {
+      const b = new ArrayBuffer(48), v = new DataView(b);
+      const text = (offset, s) => [...s].forEach((c,i)=>v.setUint8(offset+i,c.charCodeAt(0)));
+      text(0,'RIFF');v.setUint32(4,40,true);text(8,'WAVE');text(12,'fmt ');v.setUint32(16,16,true);
+      v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,48000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+      text(36,'data');v.setUint32(40,4,true);v.setInt16(44,window.changedSample || 1000,true);
+      return b;
+    };
+    PodCutPremiere.sequenceAudio = async () => { assistedExports++; return assistedWav(); };
     PodCutAudio.decodeWavAsync = async () => ({sampleRate:1000,channels:[new Float32Array(36000)]});
     PodCutCore.analyzeAudioAsync = async () => ({durationSeconds:36,silenceCount:2,longPauseCount:0,
       decisions:[{id:'one',type:'silence',enabled:true,cutStart:9.07,cutEnd:11.8,removeSeconds:2.73},
@@ -575,6 +584,7 @@ test('distinct experimental panel flow enforces opt-in/one cut, duplicate lock a
   await expect(page.locator('#assistedConfirmationText')).toContainText('original stays unchanged');
   await expect(page.locator('#assistedConfirmationText')).toContainText('Undo is not one-step');
   await page.locator('#confirmAssisted').click();
+  await expect.poll(()=>page.evaluate(()=>assistedSubmissions)).toBe(1);
   await page.evaluate(()=>{document.querySelector('#confirmAssisted').click();hooks.panels.podcutPanel.show(document.body);});
   expect(await page.evaluate(()=>assistedSubmissions)).toBe(1);
   await expect(page.locator('#preset')).toBeDisabled();
@@ -594,6 +604,49 @@ test('distinct experimental panel flow enforces opt-in/one cut, duplicate lock a
   await page.evaluate(()=>{assistedInfo.projectPath='other.prproj';hooks.panels.podcutPanel.show(document.body);});
   await expect(page.locator('#assistedReconciliation')).toContainText('exact project');
   await expect(page.locator('#confirmManualLink')).toHaveAttribute('aria-disabled','true');
+});
+
+test('missing reopen hook cannot authorize changed audio; both action boundaries re-export', async ({page}) => {
+  await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
+  await page.locator('#analyze').click(); await page.locator('#decisions input').last().uncheck();
+  await page.locator('#assistedOptIn').check();
+  // No show/hide callback or event revision change: native gain exposed this exact metadata hole.
+  await page.evaluate(()=>{window.changedSample=500;});
+  await page.locator('#prepareAssisted').click();
+  await expect(page.locator('#message')).toContainText('audio differs');
+  await expect(page.locator('#review')).toBeHidden();
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(0);
+  await page.locator('#analyze').click(); await page.locator('#decisions input').last().uncheck();
+  await page.locator('#prepareAssisted').click();
+  await expect(page.locator('#assistedConfirmation')).toBeVisible();
+  await page.evaluate(()=>{window.changedSample=250;});
+  await page.locator('#confirmAssisted').click();
+  await expect(page.locator('#message')).toContainText('audio differs');
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(0);
+  expect(await page.evaluate(()=>assistedExports)).toBe(5);
+});
+
+test('missing reopen hook still requires current project and rejects invalidated verification', async ({page}) => {
+  await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
+  await page.locator('#analyze').click(); await page.locator('#decisions input').last().uncheck();
+  await page.locator('#assistedOptIn').check();
+  await page.evaluate(()=>{assistedInfo={...assistedInfo,projectPath:'other.prproj'};});
+  await page.locator('#prepareAssisted').click();
+  await expect(page.locator('#message')).toContainText('project or sequence changed');
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(0);
+  await page.evaluate(()=>{assistedInfo={...assistedInfo,projectPath:'test.prproj'};});
+  await page.locator('#refreshSequence').click(); await page.locator('#analyze').click();
+  await page.locator('#decisions input').last().uncheck();
+  await page.evaluate(()=>{PodCutPremiere.sequenceAudio=(_,cb)=>{
+    cb({stage:'exporting'});return new Promise(resolve=>{window.releaseVerification=()=>resolve(assistedWav());});
+  };});
+  await page.locator('#prepareAssisted').click();
+  await expect.poll(()=>page.evaluate(()=>typeof releaseVerification)).toBe('function');
+  // Destroy invalidates the old runtime even if its native export completes later.
+  await page.evaluate(()=>{hooks.plugin.destroy();releaseVerification();});
+  await expect(page.locator('#assistedConfirmation')).toBeHidden();
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(0);
+  expect(await page.evaluate(()=>PodCutAssistedState.pending(localStorage)?.kind)).toBe('export');
 });
 
 test('reload during pending export blocks new jobs until explicit recovery and discards old review', async ({page}) => {
@@ -620,6 +673,7 @@ test('failed assisted panel draft never becomes a completed or linking-approved 
   await page.locator('#assistedOptIn').check();
   await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','false');
   await page.locator('#prepareAssisted').click(); await page.locator('#confirmAssisted').click();
+  await expect.poll(()=>page.evaluate(()=>assistedSubmissions)).toBe(1);
   await page.evaluate(()=>{window.failAssisted=true;finishAssisted();});
   await expect(page.locator('#message')).toContainText('Assisted draft failed');
   await expect(page.locator('#assistedReconciliation')).toContainText('Interrupted/failed draft');

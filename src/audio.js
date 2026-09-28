@@ -63,6 +63,21 @@
     return { type, channels, sampleRate, blockAlign, bitsPerSample, dataSize, sampleCount, durationSeconds };
   }
 
+  async function samePcm(a, b, assertCurrent = () => {}) {
+    const first = parseWav(a), next = parseWav(b);
+    if (first.sampleRate !== next.sampleRate || first.channels !== next.channels || first.dataSize !== next.dataSize) return false;
+    // Compare signed, interleaved PCM bytes, not the detector's signless channel envelope.
+    for (let start = 0; start < first.dataSize; start += 262144) {
+      assertCurrent();
+      const end = Math.min(first.dataSize, start + 262144);
+      for (let i = start; i < end; i++)
+        if (first.view.getUint8(first.dataOffset + i) !== next.view.getUint8(next.dataOffset + i)) return false;
+      if (end < first.dataSize) await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    assertCurrent();
+    return true;
+  }
+
   function decodeWav(buffer) {
     const format = parseWav(buffer);
     const { sampleCount } = format;
@@ -166,5 +181,5 @@
     return scan.result();
   }
 
-  return { STYLE_THRESHOLDS_DBFS, FRAME_SECONDS, decodeWav, decodeWavAsync, detectSilences, detectSilencesAsync, wavInfo };
+  return { STYLE_THRESHOLDS_DBFS, FRAME_SECONDS, decodeWav, decodeWavAsync, detectSilences, detectSilencesAsync, wavInfo, samePcm };
 });

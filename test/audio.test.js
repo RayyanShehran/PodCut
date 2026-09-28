@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { decodeWav, detectSilences, wavInfo } = require("../src/audio.js");
+const { decodeWav, detectSilences, wavInfo, samePcm } = require("../src/audio.js");
 
 function audio(segments, channels = 1, sampleRate = 1000) {
   const values = segments.flatMap(({ seconds, level }) => Array(Math.round(seconds * sampleRate)).fill(level));
@@ -30,6 +30,20 @@ test("16-bit stereo WAV decodes to RMS-preserving PCM", () => {
   assert.equal(decoded.channels[0].length, 2);
   assert.ok(Math.abs(decoded.channels[0][0] - Math.sqrt(0.5 * 0.5 / 2)) < 1e-6);
   assert.ok(Math.abs(decoded.channels[0][1] - Math.sqrt(0.5 * 0.5 / 2)) < 1e-6);
+});
+
+test("freshness comparison requires exact signed channel PCM, not equal envelopes or headers", async () => {
+  const a = pcm16Wav([1000, -2000, 3000, -4000], 2);
+  const identical = a.slice(0);
+  new DataView(identical).setUint32(28, 1234, true); // Non-audio header field.
+  assert.equal(await samePcm(a, identical), true);
+  assert.equal(await samePcm(a, pcm16Wav([-1000, 2000, -3000, 4000], 2)), false);
+  assert.equal(await samePcm(a, pcm16Wav([-2000, 1000, -4000, 3000], 2)), false);
+  assert.equal(await samePcm(a, pcm16Wav([1000, -2000, 3000, -4000], 1)), false);
+  assert.equal(await samePcm(a, pcm16Wav([1000, -2000, 3000, -4000], 2, 44100)), false);
+  assert.equal(await samePcm(a, pcm16Wav([1000, -2000], 2)), false);
+  await assert.rejects(samePcm(a, a, () => { throw Error('Old runtime'); }), /Old runtime/);
+  await assert.rejects(samePcm(a, new ArrayBuffer(0)), /Invalid WAV/);
 });
 
 test("truncated and unsupported WAV files are rejected", () => {

@@ -6,7 +6,7 @@
   const audio = globalThis.PodCutAudio;
   const assistedState = globalThis.PodCutAssistedState;
   const PUBLIC_APPLY_ENABLED = false; // Faithful linked-pair preservation and comprehensive freshness remain unverified.
-  const ASSISTED_PANEL_ENABLED = false; // Native floating reopen did not deliver the freshness hook.
+  const ASSISTED_PANEL_ENABLED = false; // Action-boundary PCM verification awaits native acceptance.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");
@@ -37,6 +37,7 @@
   let draftCheckId = 0;
   let manualLinkReported = false;
   let assistedConfirmationReview = null;
+  let analyzedWav = null;
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const getPath = (path) => path.split(".").reduce((value, key) => value[key], recipe);
@@ -124,6 +125,7 @@
   }
 
   function clearAnalysis() {
+    analyzedWav = null;
     applyCheckId += 1;
     readyApply = null;
     analysisResult = null;
@@ -168,7 +170,7 @@
     setActionDisabled("#recoverWork", busy);
     $("#assistedOptIn").disabled = busy || Boolean(interruptedWork);
     const reason = ASSISTED_PANEL_ENABLED ? assistedState.scopeError(readyApply) :
-      "Assisted creation is temporarily locked: native panel-reopening freshness validation is incomplete. Analysis and saved-draft checks remain available.";
+      "Assisted creation is temporarily locked: action-boundary freshness verification awaits Premiere validation. Analysis and saved-draft checks remain available.";
     $("#assistedEligibility").textContent = reason || "Experimental: manual linking and playback validation required. Undo is not one-step.";
     const assistedBlocked = busy || interruptedWork || reason || !$("#assistedOptIn").checked;
     setActionDisabled("#prepareAssisted", assistedBlocked);
@@ -363,9 +365,64 @@
     } finally { if (id === draftCheckId) { renderDraft(); syncControls(); } }
   }
 
-  function confirmAssisted() {
+  async function validateAssistedReview() {
+    const source = reviewSource, signature = JSON.stringify(applyReview(false)), generation = sourceChangeId;
+    const baseline = analyzedWav;
+    if (!baseline || assistedState.pending(localStorage)) throw new Error("Fresh analysis is required; prior work must be resolved first.");
+    const work = assistedState.begin(localStorage, "export", { projectPath: source.applySnapshot.projectPath, sequenceId: source.applySnapshot.sequenceId });
+    const id = ++operationId;
+    let started = false, returned = false, refused = false;
+    analyzing = true;
+    syncControls();
+    const assertCurrent = () => {
+      if (!isCurrent(id) || source !== reviewSource || generation !== sourceChangeId ||
+          source.revision !== host.sourceRevision?.() || signature !== JSON.stringify(applyReview(false)))
+        throw new Error("Review or source changed during verification. Analyze again.");
+    };
+    try {
+      await host.readySourceWatch?.();
+      assertCurrent();
+      const current = await host.activeSequence();
+      assertCurrent();
+      if (sequenceKey(current) !== source.key) throw new Error("Active project or sequence changed. Analyze again.");
+      const prepared = await applyService.prepare(host.applyAdapter(), applyReview(false));
+      assertCurrent();
+      const reason = assistedState.scopeError(prepared);
+      if (reason) throw new Error(reason);
+      const wav = await host.sequenceAudio(current.sequence, status => {
+        if (status.stage === "exporting") started = true;
+        if (isCurrent(id)) progress("Verifying review audio", "Fresh export; no candidate is being created.");
+      });
+      returned = true;
+      assertCurrent();
+      if (!await audio.samePcm(baseline, wav, assertCurrent)) throw new Error("Sequence audio differs from the reviewed export. Analyze again and review the new proposals.");
+      const after = await host.activeSequence();
+      assertCurrent();
+      if (sequenceKey(after) !== source.key) throw new Error("Active project or sequence changed during verification. Analyze again.");
+      await applyService.prepare(host.applyAdapter(), applyReview(false));
+      assertCurrent();
+      return prepared;
+    } catch (error) {
+      refused = error.code === "EXPORT_NOT_STARTED";
+      if (isCurrent(id)) clearAnalysis();
+      throw error;
+    } finally {
+      if (isCurrent(id)) {
+        if (returned || !started || refused) assistedState.finish(localStorage, work);
+        interruptedWork = assistedState.pending(localStorage);
+        analyzing = false;
+        $("#progress").hidden = true;
+        syncControls();
+        if (!sequenceInfo) refreshSequence(false);
+      }
+    }
+  }
+
+  async function confirmAssisted() {
     if (!ASSISTED_PANEL_ENABLED) return;
     if (analyzing || applying || interruptedWork || !reviewSource || !$("#assistedOptIn").checked || assistedState.scopeError(readyApply)) return;
+    try { readyApply = await validateAssistedReview(); }
+    catch (error) { message(error.message || String(error), "error"); return; }
     assistedConfirmationReview = JSON.stringify(applyReview(false));
     $("#assistedConfirmationText").textContent = `Prepare a separate assisted draft from “${readyApply.current.source.name}”? Only the one enabled cut removes ${readyApply.removedFrames} frames; retain ${readyApply.plan.outputFrames} frames. The original stays unchanged. The cloned tail requires manual native A/V linking. Built-in effect values, mixer/routing and external-media freshness remain unverified. This is an experimental draft, not finished output. Full-workflow Undo is not one-step.`;
     $("#assistedConfirmation").hidden = false;
@@ -375,6 +432,9 @@
     if (!ASSISTED_PANEL_ENABLED) return;
     if (analyzing || applying || interruptedWork || !reviewSource || !$("#assistedOptIn").checked || assistedState.scopeError(readyApply) ||
         !assistedConfirmationReview || assistedConfirmationReview !== JSON.stringify(applyReview(false))) return;
+    try { await validateAssistedReview(); }
+    catch (error) { message(error.message || String(error), "error"); return; }
+    if (!assistedConfirmationReview || assistedConfirmationReview !== JSON.stringify(applyReview(false))) return;
     const review = clone(applyReview(true));
     let work;
     try { work = assistedState.begin(localStorage, "assisted", { projectPath: review.source.projectPath, originalSequenceId: review.source.sequenceId }); }
@@ -580,6 +640,7 @@
       } catch (error) { source.applyError = error.message || String(error); }
       assertFresh();
       source.analysisId = id;
+      analyzedWav = wav;
       renderReview(result, source);
       $("#reviewLabel").textContent = "Premiere sequence";
       progress("Ready", "Review the detected edits below", 1, 1);
