@@ -100,6 +100,45 @@
     return { fps, segments, outputFrames: outputStart + duration - previousEnd };
   }
 
+  // Pure timing plan only, not host eligibility. All intervals are half-open [start, end).
+  // Expanded Apply stays unavailable until clip-property preservation is proved in Premiere.
+  function planConsecutiveEdit({ clips, fps, cuts }) {
+    if (!Number.isInteger(fps) || fps <= 0 || !Array.isArray(clips) || !clips.length)
+      throw new Error("Consecutive clips and a positive integer frame rate are required.");
+    const aligned = (seconds) => {
+      const frame = Math.round(seconds * fps);
+      if (!Number.isFinite(seconds) || seconds < 0 || !Number.isSafeInteger(frame) || Math.abs(frame / fps - seconds) > 1e-4)
+        throw new Error("Clip boundaries and source in/out points must align to sequence frames.");
+      return frame;
+    };
+    let previousEnd = 0;
+    const spans = clips.map((clip, clipIndex) => {
+      const start = aligned(clip.start), end = aligned(clip.end);
+      const sourceIn = aligned(clip.inPoint), sourceOut = aligned(clip.outPoint);
+      if (!clip.projectItemId || start !== previousEnd || end <= start || sourceOut - sourceIn !== end - start)
+        throw new Error("Clips need source identities and matching normal-speed ranges, with no gaps or overlaps from frame zero.");
+      previousEnd = end;
+      return { clipIndex, projectItemId: clip.projectItemId, start, end, sourceIn };
+    });
+    // Reuse the released ceil-to-frame cut policy and its overlap/edge validation.
+    const retained = planSimpleEdit({ durationSeconds: previousEnd / fps, sourceInSeconds: 0, fps, cuts });
+    const segments = [];
+    let clipIndex = 0;
+    for (const range of retained.segments) {
+      while (spans[clipIndex].end <= range.sourceStartFrame) clipIndex += 1;
+      for (let i = clipIndex; i < spans.length && spans[i].start < range.sourceEndFrame; i += 1) {
+        const clip = spans[i];
+        const start = Math.max(clip.start, range.sourceStartFrame), end = Math.min(clip.end, range.sourceEndFrame);
+        const outputStartFrame = range.outputStartFrame + start - range.sourceStartFrame;
+        segments.push({ clipIndex: i, projectItemId: clip.projectItemId,
+          sequenceStartFrame: start, sequenceEndFrame: end,
+          sourceStartFrame: clip.sourceIn + start - clip.start, sourceEndFrame: clip.sourceIn + end - clip.start,
+          outputStartFrame, outputEndFrame: outputStartFrame + end - start });
+      }
+    }
+    return { fps, segments, outputFrames: retained.outputFrames };
+  }
+
   function simpleSourceError(source) {
     if (!source || source.videoTracks < 1 || source.audioTracks < 1 || source.captionTracks !== 0)
       return "Apply requires V1, A1, and no caption tracks.";
@@ -246,5 +285,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, planConsecutiveEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });

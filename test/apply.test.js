@@ -64,6 +64,22 @@ test('stale and unsupported input fail before any candidate exists', async () =>
   }
 });
 
+test('multi-pair source remains rejected before mutation while property preservation is unproved', async () => {
+  const f = fixture();
+  for (const kind of ['videoItems', 'audioItems']) {
+    const first = f.source[kind][0];
+    f.source[kind] = [0, 12, 24].map((start, i) => ({ ...first, projectItemId: `media-${i}`,
+      start, end: start + 12, inPoint: i, outPoint: i + 12 }));
+  }
+  f.review.source = structuredClone(f.source);
+  const operation = await service.apply(f.adapter, f.review);
+  assert.equal(operation.status, 'failed');
+  assert.match(operation.errors.join(' '), /one linked V1\/A1 clip pair only/);
+  assert.ok(!f.calls.includes('candidate'));
+  assert.ok(!f.calls.includes('subclip'));
+  assert.ok(!f.calls.includes('edit'));
+});
+
 test('false or thrown partial mutations never complete, retain failed candidate, and retry fresh', async () => {
   for (const failedStage of ['createCandidate', 'createSubclip', 'editCandidate', 'verifyCandidate', 'nameCandidate', 'presentCandidate']) {
     for (const mode of ['false', 'throw']) {
