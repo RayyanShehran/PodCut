@@ -268,6 +268,11 @@
     return analysisFromDetections(audioInput, recipe, detections);
   }
 
+  function projectPathKey(path) {
+    // Premiere Save As and reopening report different prefixes for the same Windows file.
+    return String(path || '').replace(/^\\\\\?\\(?=[A-Za-z]:\\)/, '');
+  }
+
   function formatDuration(totalSeconds) {
     const seconds = Math.max(0, Math.round(totalSeconds || 0));
     const h = Math.floor(seconds / 3600);
@@ -285,5 +290,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, planConsecutiveEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, projectPathKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, planConsecutiveEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });

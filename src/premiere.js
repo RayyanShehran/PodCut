@@ -471,7 +471,7 @@
       sourceRevision,
       async inspectDraft(record) {
         const project = await ppro.Project.getActiveProject();
-        if (!project || guid(project) !== record.projectId || project.path !== record.projectPath)
+        if (!project || guid(project) !== record.projectId || core.projectPathKey(project.path) !== core.projectPathKey(record.projectPath))
           throw new Error('Open the exact project that owns this assisted draft.');
         const listed = await sequences(project);
         const read = async id => {

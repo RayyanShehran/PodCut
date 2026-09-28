@@ -35,10 +35,12 @@
     if (record?.version !== 1 || !record.candidateSequenceId || !record.sourceSnapshot || record.cuts?.length !== 1)
       throw new Error('Interrupted or invalid draft record. Inspect the project; do not resume automatically.');
     const source = inspected.original, candidate = inspected.candidate;
-    if (source.projectId !== record.projectId || source.projectPath !== record.projectPath ||
+    const pathKey = core.projectPathKey;
+    const snapshotKey = value => JSON.stringify({ ...value, projectPath: pathKey(value.projectPath) });
+    if (source.projectId !== record.projectId || pathKey(source.projectPath) !== pathKey(record.projectPath) ||
         source.sequenceId !== record.originalSequenceId || candidate.sequenceId !== record.candidateSequenceId ||
-        candidate.projectId !== record.projectId || candidate.projectPath !== record.projectPath ||
-        JSON.stringify(source) !== JSON.stringify(record.sourceSnapshot))
+        candidate.projectId !== record.projectId || pathKey(candidate.projectPath) !== pathKey(record.projectPath) ||
+        snapshotKey(source) !== snapshotKey(record.sourceSnapshot))
       throw new Error('Recorded project or original metadata changed. Draft validation is pending.');
     const plan = core.planSimpleEdit({ durationSeconds: source.durationSeconds,
       sourceInSeconds: source.videoItems[0].inPoint, fps: source.fps, cuts: record.cuts });

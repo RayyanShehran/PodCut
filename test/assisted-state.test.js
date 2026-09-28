@@ -45,3 +45,14 @@ test('draft reconciliation verifies exact ownership and ranges, never links or p
     const f = fixture(); mutate(f); assert.throws(()=>state.validateDraft(f.record,f.inspected));
   }
 });
+
+test('reopening accepts Premiere extended drive prefix but not another project', () => {
+  const f = fixture(), path = 'C:\\Fixtures\\proof.prproj';
+  f.record.projectPath = f.record.sourceSnapshot.projectPath = path;
+  f.inspected.original.projectPath = f.inspected.candidate.projectPath = '\\\\?\\' + path;
+  assert.deepEqual(state.validateDraft(f.record, f.inspected), f.record.plan);
+  assert.equal(core.projectPathKey('\\\\?\\C:\\Fixtures\\proof.prproj'), path);
+  assert.notEqual(core.projectPathKey('C:\\Fixtures\\copy.prproj'), path);
+  f.inspected.original.projectId = 'another-project';
+  assert.throws(() => state.validateDraft(f.record, f.inspected), /Recorded project/);
+});

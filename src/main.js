@@ -172,7 +172,7 @@
     setActionDisabled("#prepareAssisted", assistedBlocked);
     setActionDisabled("#confirmAssisted", assistedBlocked);
     setActionDisabled("#confirmManualLink", busy || !draftVerified ||
-      sequenceInfo?.projectPath !== draftRecord?.projectPath || sequenceInfo?.sequenceId !== draftRecord?.candidateSequenceId);
+      core.projectPathKey(sequenceInfo?.projectPath) !== core.projectPathKey(draftRecord?.projectPath) || sequenceInfo?.sequenceId !== draftRecord?.candidateSequenceId);
   }
 
   function setActionDisabledControl(control, disabled) {
@@ -716,7 +716,7 @@
     $("#confirmManualLink").addEventListener("click", async () => {
       if (analyzing || applying) return;
       await reconcileDraft();
-      if (!draftVerified || sequenceInfo?.sequenceId !== draftRecord.candidateSequenceId || sequenceInfo?.projectPath !== draftRecord.projectPath) return;
+      if (!draftVerified || sequenceInfo?.sequenceId !== draftRecord.candidateSequenceId || core.projectPathKey(sequenceInfo?.projectPath) !== core.projectPathKey(draftRecord.projectPath)) return;
       manualLinkReported = true;
       storeDraft({ ...draftRecord, manualLinkReportedAt: Date.now() });
       renderDraft();
