@@ -361,6 +361,8 @@ test("production panel Apply honors enabled cuts, locks double clicks, and repor
   await expect(page.locator("#applyStatus")).toContainText("1 cuts; remove 46 frames");
   await page.locator("#apply").click();
   await expect(page.locator("#applyConfirmationText")).toContainText("Interview — PodCut");
+  await expect(page.locator("#applyConfirmationText")).toContainText("Do not use adjusted Audio Gain or modified built-in effects");
+  await expect(page.locator(".safety")).toContainText("native Audio Gain cannot be verified");
   await page.locator("#confirmApply").click();
   await page.evaluate(() => document.querySelector("#confirmApply").click());
   await expect(page.locator("#preset")).toBeDisabled();

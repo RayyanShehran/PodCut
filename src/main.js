@@ -295,7 +295,7 @@
 
   async function confirmApply() {
     if (!PUBLIC_APPLY_ENABLED || !readyApply || applying || !reviewSource) return;
-    $("#applyConfirmationText").textContent = `Create “${readyApply.outputName}” from “${readyApply.current.source.name}”? ${readyApply.cutCount} enabled cuts remove ${readyApply.removedFrames} frames (${(readyApply.removedFrames / readyApply.plan.fps).toFixed(3)}s). Only one online V1/A1 source clip with no extra content is supported. Premiere will add a new sequence and retained subclips; the original remains untouched.`;
+    $("#applyConfirmationText").textContent = `Create “${readyApply.outputName}” from “${readyApply.current.source.name}”? ${readyApply.cutCount} enabled cuts remove ${readyApply.removedFrames} frames (${(readyApply.removedFrames / readyApply.plan.fps).toFixed(3)}s). Only one online, unmodified V1/A1 source clip with no extra content is supported. Do not use adjusted Audio Gain or modified built-in effects: these properties cannot be verified or guaranteed preserved. Premiere will add a new sequence and retained subclips; the original remains untouched.`;
     $("#applyConfirmation").hidden = false;
   }
 
