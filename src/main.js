@@ -4,7 +4,7 @@
   const host = globalThis.PodCutPremiere;
   const applyService = globalThis.PodCutApply;
   const audio = globalThis.PodCutAudio;
-  const PUBLIC_APPLY_ENABLED = true; // User playback PASS; existing simple V1/A1 eligibility remains mandatory.
+  const PUBLIC_APPLY_ENABLED = false; // Native gain preservation and audio freshness are unresolved.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");
@@ -282,7 +282,7 @@
       readyApply = prepared;
       const removed = (prepared.removedFrames / prepared.plan.fps).toFixed(3);
       const kept = (prepared.plan.outputFrames / prepared.plan.fps).toFixed(3);
-      $("#applyStatus").textContent = `Ready for confirmation: ${prepared.cutCount} cuts; remove ${prepared.removedFrames} frames (${removed}s), retain ${prepared.plan.outputFrames} frames (${kept}s). ${PUBLIC_APPLY_ENABLED ? "" : "Apply remains locked pending playback validation."}`;
+      $("#applyStatus").textContent = `Frame plan: ${prepared.cutCount} cuts; remove ${prepared.removedFrames} frames (${removed}s), retain ${prepared.plan.outputFrames} frames (${kept}s). ${PUBLIC_APPLY_ENABLED ? "Ready for confirmation." : "Apply temporarily disabled: native gain preservation and audio freshness are not verified."}`;
       setActionDisabled("#apply", !PUBLIC_APPLY_ENABLED);
     } catch (error) {
       if (id !== applyCheckId || applying) return;
@@ -441,7 +441,7 @@
       renderReview(result, source);
       $("#reviewLabel").textContent = "Premiere sequence";
       progress("Ready", "Review the detected edits below", 1, 1);
-      message("Analysis complete. Only cuts left enabled in review will be applied to a separate sequence.", "");
+      message(PUBLIC_APPLY_ENABLED ? "Analysis complete. Only cuts left enabled in review will be applied to a separate sequence." : "Analysis complete. Review available; Apply is temporarily disabled while property preservation and audio freshness are investigated.", "");
     } catch (error) {
       if (!isCurrent(id)) return;
       console.error("PodCut sequence analysis failed", error);

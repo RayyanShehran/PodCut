@@ -287,7 +287,7 @@ test("Premiere project activation clears the old review and refreshes the source
   await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "false");
 });
 
-test("public Apply enables supported review only; zero cuts and transitions remain rejected", async ({ page }) => {
+test("public Apply stays locked for property safety; review, zero-cut and transition checks remain usable", async ({ page }) => {
   await page.goto(panelUrl);
   await page.evaluate(() => {
     const item = { projectItemId: "media", start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
@@ -307,7 +307,9 @@ test("public Apply enables supported review only; zero cuts and transitions rema
   await page.locator("#refreshSequence").click();
   await page.locator("#analyze").click();
   await expect(page.locator("#applyStatus")).toContainText("remove 46 frames (1.533s)");
-  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "false");
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator("#applyStatus")).toContainText("native gain preservation and audio freshness are not verified");
+  await page.evaluate(() => document.querySelector("#apply").click());
   await expect(page.locator("#applyConfirmation")).toBeHidden();
   await page.locator("#decisions input").uncheck();
   await expect(page.locator("#applyStatus")).toContainText("at least one cut");
@@ -324,9 +326,12 @@ test("public Apply enables supported review only; zero cuts and transitions rema
   await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
 });
 
-test("production panel Apply honors enabled cuts, locks double clicks, and reports the separate output", async ({ page }) => {
+test("isolated panel Apply honors enabled cuts, locks double clicks, and reports the separate output", async ({ page }) => {
   const script = readFileSync(resolve(__dirname, "..", "src", "main.js"), "utf8");
-  expect(script).toContain("const PUBLIC_APPLY_ENABLED = true;");
+  expect(script).toContain("const PUBLIC_APPLY_ENABLED = false;");
+  // Non-shipping browser handler regression only; production source/build remain locked.
+  await page.route("**/src/main.js", route => route.fulfill({ contentType: "text/javascript",
+    body: script.replace("const PUBLIC_APPLY_ENABLED = false;", "const PUBLIC_APPLY_ENABLED = true;") }));
   await page.goto(panelUrl);
   await page.evaluate(() => {
     const item = { projectItemId: "media", start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
@@ -362,7 +367,7 @@ test("production panel Apply honors enabled cuts, locks double clicks, and repor
   await page.locator("#apply").click();
   await expect(page.locator("#applyConfirmationText")).toContainText("Interview — PodCut");
   await expect(page.locator("#applyConfirmationText")).toContainText("Do not use adjusted Audio Gain or modified built-in effects");
-  await expect(page.locator(".safety")).toContainText("native Audio Gain cannot be verified");
+  await expect(page.locator(".safety")).toContainText("native Audio Gain preservation and audio freshness are not verified");
   await page.locator("#confirmApply").click();
   await page.evaluate(() => document.querySelector("#confirmApply").click());
   await expect(page.locator("#preset")).toBeDisabled();

@@ -14,9 +14,9 @@ PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors 
 - Reviewable edit decisions with filters, bulk enable/disable, Locate playhead navigation, and updated duration estimates
 - Validated recipe and disclosure preferences stored locally; Reset settings is under Developer
 - Generated PCM development input for exercising the real detector without Premiere
-- Guarded public Apply for the proven simple V1/A1 source layout; only review decisions left enabled are applied
+- Analysis and review remain available; public Apply is temporarily disabled pending property-preservation and audio-freshness verification
 
-PodCut can acquire sequence audio from Premiere for analysis and apply selected silence-removal decisions to a separate **candidate** sequence within its restricted supported layout. PodCut does **not** transcribe speech or detect filler words. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
+PodCut can acquire sequence audio from Premiere for analysis and review. Its candidate-building service is currently gated from public use: native Audio Gain changes bypass the metadata freshness check, and property preservation has not been established. PodCut does **not** transcribe speech or detect filler words. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
 
 ## Silence analysis
 
@@ -68,7 +68,7 @@ PodCut rechecks the active sequence when shown and when Refresh is used. Results
 
 ## Constrained editing workflow and limits
 
-The demonstrated Apply path supports one online, ordinary source file represented by one matching linked V1/A1 clip pair, starting at sequence time zero, at an integer frame rate and normal forward speed. Other tracks may exist only if empty. Occupied extra tracks, captions, transitions, extra effects, keyframes, muted/disabled clips, nested or multicam media, and speed changes are refused before creating output. Native Audio Gain and modified static settings on Premiere's built-in Motion/Opacity/Volume-type effects are not distinguished from defaults. Do not use Apply for those sources: eligibility success does not verify these properties, and reconstruction cannot guarantee preservation.
+Public Apply is temporarily disabled for every layout. The existing development service accepts one online, ordinary source file represented by one matching linked V1/A1 clip pair, starting at sequence time zero, at an integer frame rate and normal forward speed. Other tracks may exist only if empty. Occupied extra tracks, captions, transitions, extra effects, keyframes, muted/disabled clips, nested or multicam media, and speed changes are refused before creating output. Native Audio Gain and modified static settings on Premiere's built-in Motion/Opacity/Volume-type effects are not distinguished from defaults. Consequently, "unmodified clips only" is not an enforced safeguard. No clip-property preservation guarantee is currently made.
 
 Analyze → disable any proposed cuts you want to keep → inspect the frame-aligned removal and retained durations → confirm creation of a **separate** `— PodCut` sequence. Pause removal is optional: only decisions left enabled are submitted. The source sequence is not overwritten or automatically saved. Zero enabled cuts, stale analysis, changed recipes, and unsupported layouts are refused before candidate creation. Detector thresholds and padding were not made more aggressive for release.
 
@@ -97,7 +97,7 @@ The panel, lifecycle, layout, and active-sequence reads have been validated in P
 
 ## Release evidence and scope
 
-The user explicitly reported **PASS** for `podcut-nasa-moving-synthetic — PodCut` in `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Moving Sync Validation 2026-09-28.prproj`. The separate saved production-panel proof is `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Restricted Apply Release 2026-09-28.prproj`: disabling the long-pause decision retained it and produced a 1,034-frame candidate. Public Apply is enabled only within the existing guarded simple V1/A1 scope. This is restricted silence removal, not general podcast editing. The synthetic fixture mutes speech while preserving continuous NASA video; it does not establish quality across natural speech, background noise, or complex projects. Full-workflow Undo is not one-step. See [docs/STATUS.md](docs/STATUS.md) for exact evidence and limitations.
+The user explicitly reported **PASS** for `podcut-nasa-moving-synthetic — PodCut` in `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Moving Sync Validation 2026-09-28.prproj`. The separate saved production-panel proof is `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Restricted Apply Release 2026-09-28.prproj`: disabling the long-pause decision retained it and produced a 1,034-frame candidate. That playback evidence does not resolve the subsequently demonstrated gain/freshness gap; public Apply is now disabled. This is restricted silence removal, not general podcast editing. The synthetic fixture mutes speech while preserving continuous NASA video; it does not establish quality across natural speech, background noise, or complex projects. Full-workflow Undo is not one-step. See [docs/STATUS.md](docs/STATUS.md) for exact evidence and limitations.
 
 ## Multi-clip milestone: timing planner only
 

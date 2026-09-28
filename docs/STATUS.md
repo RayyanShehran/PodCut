@@ -1,5 +1,11 @@
 # PodCut status
 
+## Public Apply safety hold (September 28; supersedes the release below)
+
+Starting state was clean `551078a`; origin was verified and fetched before edits. The released single-pair service shares the affected snapshot/subclip reconstruction logic. Native Audio Gain changes can remain eligible and invisible to metadata freshness; preserving gain and detecting an audio change after analysis are separate requirements. Public Apply is therefore disabled in source and production build, for every layout. Analysis/review remain available. The public UI regression checks the locked control and confirmation guard; existing handler regressions use a browser-only intercepted script, not a shipping bypass. Multi-clip construction remains unimplemented/gated. No detector, padding, planner, or editing-service change is made by this safety hold.
+
+Gain output preservation and decoded-audio freshness are still under investigation. No warning or claim of "unmodified clips only" is an enforced replacement for these checks. Historical enabled-gate statements below describe their dates, not current safety.
+
 ## Multi-clip planner completed; host expansion stopped at native-gain safeguard (September 28)
 
 Starting state was clean `02d8f4d` on `main`; origin was verified as `https://github.com/RayyanShehran/PodCut.git` and fetched before editing. No repository `AGENTS.md` was present. Existing single-pair public eligibility/service remains unchanged and enabled; expanded Apply was neither implemented nor unlocked.
