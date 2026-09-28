@@ -1,5 +1,22 @@
 # PodCut status
 
+## Restricted public Apply released after explicit playback PASS (September 28)
+
+The user explicitly reported: **“PASS — the moving-video candidate plays correctly.”** This closes the human visual/audio gate for the saved 947-frame synthetic candidate below, not for general natural-speech podcast quality. Public Apply is now enabled in source and normal `dist/` build, with the existing simple V1/A1 eligibility unchanged. Pause removal remains optional: only cuts left enabled in review enter the frame plan. No detector threshold, padding, editing-service implementation, or layout eligibility changed.
+
+Actual Premiere 26.5 release checks used the normal installed `com.rayyanshehran.podcut` panel from `C:\Projects\PodCut\dist`, not a temporary plugin or debugger Apply bypass:
+
+- Save As preserved the PASS proof and created `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Restricted Apply Release 2026-09-28.prproj`.
+- The real panel analyzed source `podcut-nasa-moving-synthetic` (GUID `8335638c-80f3-43b0-a091-c7faa6ef982e`), showing `10.250–11.800s` silence and `22.550–25.450s` long pause. The long-pause review checkbox was unchecked. Native Apply → confirmation → Create new sequence submitted one enabled cut: 46 removed / 1,034 retained frames at 30 fps.
+- Exactly one candidate was created, sequence count 5 → 6: `podcut-nasa-moving-synthetic — PodCut`, GUID `b031e127-5e5d-4643-8e0c-df3708c8706c`, 34.466667s / `00:00:34:14`. Retained source `[0,308)`, `[354,1080)` maps to matching V1/A1 output `[0,308)`, `[308,1034)`. The disabled long pause is retained. The service verified candidate ranges and the unchanged source; independent read-only host inspection found matching two-item V/A boundaries and the original single `[0,36]` pair with in/out `[0,36]`.
+- Completion identified the candidate name/GUID and remained visible after Premiere activated it. The native save cleared the unsaved marker.
+- Refreshing and analyzing that two-pair candidate correctly rejected it with **“Apply supports one linked V1/A1 clip pair only.”** Public Apply was disabled for that unsupported review. Read-only project inventory remained six sequences: no extra candidate was created. This rejection's bounded preflight log completed inspection in 136ms and recorded the precise eligibility error.
+- Read-only plugin-folder inspection confirmed `C:\Projects\PodCut\dist` and `PUBLIC_APPLY_ENABLED=true`. No temporary test access was installed. The native production path, not a direct service invocation, supplied this release evidence.
+
+Automated evidence: 43 unit tests passed, two optional external-media tests skipped (their media coverage passed in the previous fixture validation); 13 UI tests, manifest validation, and build passed. A targeted service test checks disabled-pause retention and all-disabled rejection before candidate creation. The production UI test now uses the unchanged shipped script, checks submitted enabled-only ranges, duplicate submission protection, failure/retry and completion. Existing source freshness, frame-plan, unsupported-layout, and failure-isolation tests remain intact. Release implementation/tests: `11c7c9f`.
+
+This release remains restricted to the proven ordinary linked V1/A1 case; occupied extra tracks, extra clip pairs, transitions, captions, added effects, keyframes, muted/disabled items, speed changes, and nonordinary media remain rejected. Modified static built-in Motion/Opacity/Volume settings are not distinguished from defaults; use only the proven unmodified layout. Full-workflow Undo is not atomic. The new one-cut release proof has objective host verification, not a separate user listening verdict; the explicit PASS applies to the earlier two-cut moving-video candidate. Historical gated/pending entries below describe their dates, not the current release state.
+
 ## Moving-video synthetic candidate saved (September 28)
 
 The user reported clear audio but repeatable picture hesitation at both joins of the previous NASA candidate. The old generator deliberately appended frozen video (`tpad=stop_mode=clone`) alongside silence. Its plan retained 14 frozen source frames around the first join and 26 around the second (0.467s / 0.867s). A real Premiere ProRes export of that saved candidate contained the expected 940 frames. Per-frame grayscale comparisons against retained source `[0,308)`, `[354,675)`, `[769,1080)` were consistent with the plan: normalized mean absolute error 0.860 / maximum 1.122 on 8-bit luma after fitting export colour conversion, and no neighbouring-frame alternative better by more than 0.1. The boundary frames matched the expected mapping. This supports a fixture artifact, not an additional service freeze; lossy/colour-converted frame comparisons are not byte-identical proof.
@@ -15,7 +32,7 @@ Saved project: `C:\Projects\PodCut-TestMedia\Fixtures\PodCut Moving Sync Validat
 - A real Premiere ProRes diagnostic export contained all 947 expected video frames. Colour-normalized frame comparison mean error 1.266 / maximum 1.944 luma levels; no neighbouring-frame alternative better by more than 0.1, including joins `307→354` and `676→764`. No evidence of added repeats/freezes or wrong frame order. Exported 48kHz stereo audio matches all 3,030,400 retained interleaved samples exactly (difference RMS 0); output peak 0.577. This is rendered-file evidence, not a human playback PASS.
 - Premiere save cleared its unsaved marker; the saved project contains candidate name/GUID. No production code or gate changed; source/build `PUBLIC_APPLY_ENABLED=false`, no temporary plugin/bypass installed.
 
-**Remaining gate:** user visual/audio check on this new saved candidate. At 30 fps view `00:00:09:08–00:00:11:08` and `00:00:20:01–00:00:22:01`. Expect a normal jump cut, but no frozen hold or slow/lagging frames. Check clean audio and A/V timing outside the intentionally muted speech. The previous audio verdict does not approve this new candidate. Only after explicit PASS perform the restricted V1/A1 production-release checks. Unsupported layouts remain rejected; full-workflow Undo remains non-atomic.
+**Gate subsequently passed:** the user explicitly approved this moving-video candidate's playback; production-release checks are recorded above. The reviewed 30 fps windows were `00:00:09:08–00:00:11:08` and `00:00:20:01–00:00:22:01`. Unsupported layouts remain rejected; full-workflow Undo remains non-atomic.
 
 Automated verification: 44 unit/media tests passed with both external fixture tests enabled, 13 UI tests passed, manifest check and build passed. The exact-frame test would fail for the old frozen generator. No detector thresholds/padding or editing support were changed.
 
@@ -52,7 +69,7 @@ A new disposable Premiere project, `C:\Projects\PodCut-TestMedia\Fixtures\PodCut
 - Silence and long-pause decisions with padding, enable/disable state, and duration estimates
 - Generated PCM development analysis connected to the same review UI
 - Guarded candidate-only Apply service, with frame-aligned preflight, stage reporting, output verification, and failed-artifact labeling
-- Public Apply remains deliberately gated; the panel can preview the exact edit but cannot submit it until playback validation passes
+- Public Apply is enabled for the restricted simple V1/A1 case after explicit playback PASS; it applies enabled review cuts only
 
 ## Host validation completed
 
