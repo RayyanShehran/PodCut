@@ -87,13 +87,18 @@
       return true; // Structural verification only; does NOT verify native links or sound.
     },
     nameCandidate(op, name) {
-      return base.nameCandidate(op, name.startsWith('PodCut FAILED') ? name : 'PodCut ASSISTED DRAFT — linking required');
+      const label = name.startsWith('PodCut FAILED') ? name : 'PodCut ASSISTED DRAFT — linking required';
+      if (!name.startsWith('PodCut FAILED')) op.outputName = label;
+      return base.nameCandidate(op, label);
     }
   };
   return {
     adapter,
     async prepare(review, onStage) {
-      const result = await service.apply(adapter, review, onStage);
+      const stageName = stage => stage === 'completed' ? 'awaiting manual linking' :
+        stage === 'creating retained subclip' ? 'preparing retained track clone' : stage;
+      const result = await service.apply(adapter, review, onStage && ((stage, op) => onStage(stageName(stage), op)));
+      result.stages = result.stages.map(stageName);
       if (result.status === 'completed') result.status = 'awaiting-manual-linking';
       return result;
     }

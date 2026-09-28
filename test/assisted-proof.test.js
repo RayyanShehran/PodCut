@@ -41,6 +41,8 @@ function fixture() {
 test('assisted proof retains only enabled ranges and ends awaiting manual linking, never finished', async () => {
   const f = fixture(), op = await f.run.prepare(f.review);
   assert.equal(op.status, 'awaiting-manual-linking'); assert.equal(op.plan.outputFrames, 1034);
+  assert.equal(op.outputName, 'PodCut ASSISTED DRAFT — linking required');
+  assert.ok(op.stages.includes('awaiting manual linking')); assert.ok(!op.stages.includes('completed'));
   for (const track of f.tracks) {
     assert.deepEqual(track.map(i => [i.start, i.end, i.inPoint, i.outPoint].map(s => Math.round(s * 30))),
       [[0, 308, 0, 308], [308, 1034, 354, 1080]]);

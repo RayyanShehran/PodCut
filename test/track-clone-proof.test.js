@@ -30,6 +30,38 @@ function retained(source, output, sourceFrame, outputFrame, frames) {
   assert.ok(actual.equals(expected), 'Retained signed channel samples changed (gain/polarity/routing/interleaving)');
 }
 
+test('saved assisted draft retains both minus6 sections and awaits native linking', {
+  skip: !process.env.PODCUT_ASSISTED_PROOF
+}, () => {
+  const dir = process.env.PODCUT_ASSISTED_PROOF;
+  const source = pcm(join(dir, 'podcut-assisted-source.wav'));
+  const output = pcm(join(dir, 'podcut-assisted-draft.wav'));
+  // Fractional host ticks add one zero stereo sample-frame at export end,
+  // not a video frame or changed retained speech.
+  assert.equal(output.info.sampleCount, 999 * 1600 + 1);
+  assert.ok(output.samples.subarray(-4).equals(Buffer.alloc(4)));
+  retained(source, output, 2, 2, 269);
+  retained(source, output, 356, 275, 722);
+  const e = JSON.parse(readFileSync(join(dir, 'podcut-assisted-proof.json'), 'utf8'));
+  assert.equal(e.operation.status, 'awaiting-manual-linking');
+  assert.equal(e.operation.plan.outputFrames, 999);
+  assert.equal(e.sequenceCountAfter - e.sequenceCountBefore, 1);
+  assert.equal(e.duplicateRejected, true);
+  assert.equal(e.publicApplyDisabled, true);
+  assert.equal(e.productionHooksRestored, true);
+  assert.equal(e.manualRelinkVerified, false);
+  // Recorded native clicks, not a programmatic link-property query.
+  assert.equal(e.headSelection.length, 2);
+  assert.equal(e.tailSelection.length, 1);
+  for (const items of e.originalAfter)
+    assert.deepEqual(items.map(i => [i.start, i.end, i.inPoint, i.outPoint]), [[0, 36, 0, 36]]);
+  for (const items of e.candidateRanges) {
+    assert.deepEqual(items.map(i => [i.start, i.end, i.inPoint, i.outPoint].map(t => Math.round(t * 30))),
+      [[0, 273, 0, 273], [273, 999, 354, 1080]]);
+    for (const item of items) assert.equal(item.projectItemId, e.operation.sourceSnapshot.videoItems[0].projectItemId);
+  }
+});
+
 test('retained PCM check catches the demonstrated post-cut gain reset', () => {
   const samples = Buffer.alloc(1600 * 4);
   const louder = Buffer.alloc(samples.length);
