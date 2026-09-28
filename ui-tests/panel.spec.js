@@ -303,6 +303,8 @@ test("public Apply stays locked for property safety; review, zero-cut and transi
     PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(36000).fill(0.2))] });
     PodCutCore.analyzeAudioAsync = async () => ({ durationSeconds: 36, silenceCount: 1, longPauseCount: 0,
       decisions: [{ id: "cut", type: "silence", enabled: true, cutStart: 10.25, cutEnd: 11.8, removeSeconds: 1.55 }] });
+    window.applySubmissions = 0;
+    PodCutApply.apply = async () => { window.applySubmissions++; throw new Error("Public safety hold bypassed"); };
   });
   await page.locator("#refreshSequence").click();
   await page.locator("#analyze").click();
@@ -311,6 +313,20 @@ test("public Apply stays locked for property safety; review, zero-cut and transi
   await expect(page.locator("#applyStatus")).toContainText("native gain preservation and audio freshness are not verified");
   await page.evaluate(() => document.querySelector("#apply").click());
   await expect(page.locator("#applyConfirmation")).toBeHidden();
+  await page.evaluate(() => document.querySelector("#confirmApply").click());
+  expect(await page.evaluate(() => window.applySubmissions)).toBe(0);
+  // Model native gain changes invisible to the metadata snapshot, before and after analysis.
+  await page.evaluate(() => {
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(36000).fill(0.1))] });
+  });
+  await page.locator("#analyze").click();
+  await expect(page.locator("#applyStatus")).toContainText("native gain preservation and audio freshness are not verified");
+  await page.evaluate(() => {
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(36000).fill(0.05))] });
+    document.querySelector("#apply").click();
+    document.querySelector("#confirmApply").click();
+  });
+  expect(await page.evaluate(() => window.applySubmissions)).toBe(0);
   await page.locator("#decisions input").uncheck();
   await expect(page.locator("#applyStatus")).toContainText("at least one cut");
   await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
