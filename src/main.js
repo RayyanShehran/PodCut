@@ -4,7 +4,7 @@
   const host = globalThis.PodCutPremiere;
   const applyService = globalThis.PodCutApply;
   const audio = globalThis.PodCutAudio;
-  const PUBLIC_APPLY_ENABLED = false; // Playback validation has not passed; keep the production action gated.
+  const PUBLIC_APPLY_ENABLED = true; // User playback PASS; existing simple V1/A1 eligibility remains mandatory.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");
@@ -441,7 +441,7 @@
       renderReview(result, source);
       $("#reviewLabel").textContent = "Premiere sequence";
       progress("Ready", "Review the detected edits below", 1, 1);
-      message("Sequence audio analysis complete. Review only; timeline editing remains disabled.", "");
+      message("Analysis complete. Only cuts left enabled in review will be applied to a separate sequence.", "");
     } catch (error) {
       if (!isCurrent(id)) return;
       console.error("PodCut sequence analysis failed", error);

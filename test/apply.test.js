@@ -37,6 +37,22 @@ test('frame plan, verification, and duplicate Apply guard', async () => {
   assert.equal(f.calls.filter(x => x === 'candidate').length, 1);
 });
 
+test('Apply plans only enabled review cuts; disabled pauses are retained', async () => {
+  const f = fixture();
+  f.review.decisions[1].enabled = false;
+  const operation = await service.apply(f.adapter, f.review);
+  assert.equal(operation.status, 'completed');
+  assert.equal(operation.plan.outputFrames, 1034);
+  assert.deepEqual(operation.plan.segments.map(s => [s.sourceStartFrame, s.sourceEndFrame]), [[0, 308], [354, 1080]]);
+  assert.equal(f.calls.filter(x => x === 'subclip').length, 1);
+  const none = fixture();
+  none.review.decisions.forEach(d => { d.enabled = false; });
+  const rejected = await service.apply(none.adapter, none.review);
+  assert.equal(rejected.status, 'failed');
+  assert.match(rejected.errors.join(' '), /at least one cut/);
+  assert.ok(!none.calls.includes('candidate'));
+});
+
 test('stale and unsupported input fail before any candidate exists', async () => {
   for (const change of [f => { f.review.key = 'old'; }, f => { f.review.currentRecipe = 'changed'; }, f => { f.source.captionTracks = 1; },
     f => { f.review.decisions[0].cutStart = 0; }]) {

@@ -287,7 +287,7 @@ test("Premiere project activation clears the old review and refreshes the source
   await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "false");
 });
 
-test("review shows frame-aligned Apply preview but keeps the public action gated", async ({ page }) => {
+test("public Apply enables supported review only; zero cuts and transitions remain rejected", async ({ page }) => {
   await page.goto(panelUrl);
   await page.evaluate(() => {
     const item = { projectItemId: "media", start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
@@ -307,19 +307,26 @@ test("review shows frame-aligned Apply preview but keeps the public action gated
   await page.locator("#refreshSequence").click();
   await page.locator("#analyze").click();
   await expect(page.locator("#applyStatus")).toContainText("remove 46 frames (1.533s)");
-  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "false");
   await expect(page.locator("#applyConfirmation")).toBeHidden();
   await page.locator("#decisions input").uncheck();
   await expect(page.locator("#applyStatus")).toContainText("at least one cut");
   await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
+  await page.evaluate(() => {
+    const previous = PodCutPremiere.applyAdapter;
+    PodCutPremiere.applyAdapter = () => ({ inspect: async () => {
+      const current = await previous().inspect();
+      return { ...current, source: { ...current.source, videoTransitions: 1 } };
+    } });
+  });
+  await page.locator("#analyze").click();
+  await expect(page.locator("#applyStatus")).toContainText("Transitions are not supported");
+  await expect(page.locator("#apply")).toHaveAttribute("aria-disabled", "true");
 });
 
-test("isolated panel Apply route confirms, locks double clicks, and reports the separate output", async ({ page }) => {
-  // Test-only script substitution: the built plugin keeps PUBLIC_APPLY_ENABLED=false.
+test("production panel Apply honors enabled cuts, locks double clicks, and reports the separate output", async ({ page }) => {
   const script = readFileSync(resolve(__dirname, "..", "src", "main.js"), "utf8");
-  expect(script).toContain("const PUBLIC_APPLY_ENABLED = false;");
-  await page.route("**/src/main.js", (route) => route.fulfill({ contentType: "text/javascript",
-    body: script.replace("const PUBLIC_APPLY_ENABLED = false;", "const PUBLIC_APPLY_ENABLED = true;") }));
+  expect(script).toContain("const PUBLIC_APPLY_ENABLED = true;");
   await page.goto(panelUrl);
   await page.evaluate(() => {
     const item = { projectItemId: "media", start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
@@ -334,7 +341,7 @@ test("isolated panel Apply route confirms, locks double clicks, and reports the 
     PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
     PodCutPremiere.applyAdapter = () => ({
       inspect: async () => ({ key: PodCutCore.sequenceKey(window.info), source: window.source }),
-      createCandidate: async () => { window.calls.push("candidate"); return new Promise(resolveCandidate => { window.resolveCandidate = resolveCandidate; }); },
+      createCandidate: async (operation) => { window.submittedPlan = operation.plan; window.calls.push("candidate"); return new Promise(resolveCandidate => { window.resolveCandidate = resolveCandidate; }); },
       createSubclip: async () => { window.calls.push("subclip"); return "subclip"; },
       editCandidate: async () => { window.calls.push("edit"); if (window.failEdit) { window.failEdit = false; throw Error("injected edit failure"); } return true; },
       verifyCandidate: async () => { window.calls.push("verify"); return true; },
@@ -358,6 +365,8 @@ test("isolated panel Apply route confirms, locks double clicks, and reports the 
   await page.evaluate(() => document.querySelector("#confirmApply").click());
   await expect(page.locator("#preset")).toBeDisabled();
   expect(await page.evaluate(() => window.calls)).toEqual(["candidate"]);
+  expect(await page.evaluate(() => window.submittedPlan.segments.map(s => [s.sourceStartFrame, s.sourceEndFrame])))
+    .toEqual([[0, 308], [354, 1080]]);
   await page.evaluate(() => window.resolveCandidate("candidate-id"));
   await expect(page.locator("#applyStatus")).toContainText("Completed: Interview — PodCut (candidate-id)");
   await expect(page.locator("#message")).toContainText("first Undo reverses output naming");
