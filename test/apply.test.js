@@ -3,6 +3,28 @@ const assert = require('node:assert/strict');
 const service = require('../src/apply.js');
 
 let next = 0;
+
+test('changed gain revision rejects stale review before/during preflight and before candidate creation', async () => {
+  for (const when of ['before', 'during', 'after']) {
+    const f = fixture();
+    let revision = 0;
+    f.review.revision = 0;
+    f.adapter.sourceRevision = () => revision;
+    if (when === 'before') revision++;
+    if (when === 'during') f.adapter.inspect = async () => {
+      revision++; return { key: f.review.key, source: f.source };
+    };
+    const output = await service.apply(f.adapter, f.review, stage => {
+      if (when === 'after' && stage === 'creating candidate') revision++;
+    });
+    assert.equal(output.status, 'failed');
+    assert.match(output.errors.join(' '), /content changed/);
+    assert.ok(!f.calls.includes('candidate'));
+  }
+  const missing = fixture();
+  missing.adapter.sourceRevision = () => 0;
+  await assert.rejects(service.prepare(missing.adapter, missing.review), /monitoring is unavailable/);
+});
 function fixture() {
   const item = { projectItemId: 'media', start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1, disabled: false, reversed: false };
   const source = { projectId: 'project', sequenceId: 'original', name: 'Source', durationSeconds: 36, fps: 30,

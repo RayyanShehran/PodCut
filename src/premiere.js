@@ -271,14 +271,89 @@
     if (activeExport) activeExport.stop();
   }
 
-  function onActiveSourceChanged(callback) {
-    const ppro = getApi();
-    if (!ppro) return;
-    ppro.EventManager.addGlobalEventListener(ppro.Constants.ProjectEvent.ACTIVATED, callback, true);
-    ppro.EventManager.addGlobalEventListener(ppro.Constants.ProjectEvent.OPENED, callback, true);
-    ppro.EventManager.addGlobalEventListener(ppro.Constants.ProjectEvent.CLOSED, callback);
-    ppro.EventManager.addGlobalEventListener(ppro.Constants.SequenceEvent.ACTIVATED, callback);
+  let sourceWatch = null;
+
+  // INFO_CHANGED includes TRACK_CHANGED; don't double-subscribe to each edit.
+  // This is conservative invalidation, not proof of every audio-affecting change.
+  function createSourceWatch(ppro, callback) {
+    const manager = ppro.EventManager;
+    let revision = 0, generation = 0, disposed = false, bindings = [], ready, bindingError;
+    const clearTracks = () => {
+      for (const [target, event, handler] of bindings) {
+        try { manager.removeEventListener(target, event, handler); }
+        catch (error) { console.warn("PodCut source listener cleanup", error); }
+      }
+      bindings = [];
+    };
+    const bind = () => {
+      const run = ++generation;
+      clearTracks();
+      bindingError = null;
+      ready = (async () => {
+        const project = await ppro.Project.getActiveProject();
+        const sequence = project && await project.getActiveSequence();
+        const tracks = [];
+        if (sequence) for (const [kind, events] of [["Video", ppro.Constants.VideoTrackEvent], ["Audio", ppro.Constants.AudioTrackEvent]]) {
+          const count = await sequence[`get${kind}TrackCount`]();
+          for (let i = 0; i < count; i++) tracks.push([await sequence[`get${kind}Track`](i), events.INFO_CHANGED]);
+        }
+        if (disposed || run !== generation) return;
+        for (const [track, event] of tracks) {
+          const handler = () => {
+            if (disposed || run !== generation) return;
+            revision += 1;
+            console.info("PodCut source invalidated", JSON.stringify({ kind: "track", revision, event }));
+            callback({ kind: "track", revision });
+          };
+          manager.addEventListener(track, event, handler);
+          bindings.push([track, event, handler]);
+        }
+      })().catch(error => {
+        if (disposed || run !== generation) return;
+        bindingError = error;
+        revision += 1;
+        clearTracks();
+        console.error("PodCut source watch failed", error);
+        callback({ kind: "watch-error", revision });
+      });
+    };
+    const activated = () => {
+      if (disposed) return;
+      revision += 1;
+      bind();
+      callback({ kind: "activation", revision });
+    };
+    const globals = [ppro.Constants.ProjectEvent.ACTIVATED, ppro.Constants.ProjectEvent.OPENED,
+      ppro.Constants.ProjectEvent.CLOSED, ppro.Constants.SequenceEvent.ACTIVATED, ppro.Constants.SequenceEvent.CLOSED];
+    for (const event of globals) manager.addGlobalEventListener(event, activated,
+      event === ppro.Constants.ProjectEvent.ACTIVATED || event === ppro.Constants.ProjectEvent.OPENED);
+    bind();
+    return {
+      revision: () => revision,
+      async ready() {
+        let pending;
+        do { pending = ready; await pending; } while (pending !== ready);
+        if (disposed || bindingError) throw new Error("Source change monitoring unavailable. Reload PodCut before analyzing.");
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        generation += 1;
+        clearTracks();
+        for (const event of globals) manager.removeGlobalEventListener(event, activated);
+      }
+    };
   }
+
+  function onActiveSourceChanged(callback) {
+    if (sourceWatch) sourceWatch.dispose();
+    const ppro = getApi();
+    sourceWatch = ppro ? createSourceWatch(ppro, callback) : null;
+    const watch = sourceWatch;
+    return () => { if (watch) watch.dispose(); if (sourceWatch === watch) sourceWatch = null; };
+  }
+  function sourceRevision() { return sourceWatch ? sourceWatch.revision() : undefined; }
+  async function readySourceWatch() { if (sourceWatch) await sourceWatch.ready(); }
 
   async function setPlayerPosition(sequence, seconds) {
     const ppro = getApi();
@@ -378,7 +453,12 @@
       if (!handle) throw new Error("Apply operation lost its Premiere handles.");
       return handle;
     };
+    const requireFresh = (operation) => {
+      if (!Number.isInteger(operation.sourceRevision) || operation.sourceRevision !== sourceRevision())
+        throw new Error("Sequence content changed before mutation, or monitoring is unavailable. Analyze again.");
+    };
     return {
+      sourceRevision,
       async inspect(trace) {
         const current = await activeSequence(trace);
         if (current.state !== "ready") throw new Error(current.message || "No active sequence.");
@@ -388,6 +468,7 @@
           handles: { project: current.project, original: current.sequence, media: inspected.media } };
       },
       async createCandidate(operation) {
+        requireFresh(operation);
         const inspected = await this.inspect();
         if (JSON.stringify(inspected.source) !== JSON.stringify(operation.sourceSnapshot))
           throw new Error("The source changed during Apply preflight.");
@@ -395,7 +476,10 @@
         const handle = { project, original, media, originalSource: inspected.source, subclips: new Map(),
           beforeSequences: await sequences(project) };
         handles.set(operation.id, handle);
-        const accepted = checkedTransaction(project, () => [original.createCloneAction()], `PodCut clone ${operation.id}`);
+        const accepted = checkedTransaction(project, () => {
+          requireFresh(operation);
+          return [original.createCloneAction()];
+        }, `PodCut clone ${operation.id}`);
         const after = await sequences(project);
         const added = [...after].filter(([id]) => !handle.beforeSequences.has(id));
         if (added.length === 1) { handle.candidate = added[0][1]; operation.candidateSequenceId = added[0][0]; }
@@ -406,9 +490,12 @@
         const handle = getHandle(operation);
         const before = new Set((await itemIds(await handle.project.getRootItem())).map(item => item.getId()));
         const name = `PodCut ${operation.id} segment ${operation.subclips.length + 2}`;
-        const accepted = checkedTransaction(handle.project, () => [handle.media.createSubClipAction(name,
-          tick(segment.sourceStartFrame / operation.plan.fps), tick(segment.sourceEndFrame / operation.plan.fps), true,
-          { takeVideo: true, takeAudio: true })], `PodCut subclip ${operation.id}`);
+        const accepted = checkedTransaction(handle.project, () => {
+          requireFresh(operation);
+          return [handle.media.createSubClipAction(name,
+            tick(segment.sourceStartFrame / operation.plan.fps), tick(segment.sourceEndFrame / operation.plan.fps), true,
+            { takeVideo: true, takeAudio: true })];
+        }, `PodCut subclip ${operation.id}`);
         const added = (await itemIds(await handle.project.getRootItem())).filter(item => !before.has(item.getId()) && item.name === name);
         if (added.length === 1) handle.subclips.set(added[0].getId(), added[0]);
         if (!accepted || added.length !== 1) throw new Error(`Premiere did not create exactly one identifiable subclip ${name}.`);
@@ -425,6 +512,7 @@
         const editor = ppro.SequenceEditor.getEditor(candidate);
         const segments = operation.plan.segments;
         return checkedTransaction(handle.project, () => {
+          requireFresh(operation);
           const actions = [video[0].createSetOutPointAction(tick(segments[0].sourceEndFrame / operation.plan.fps)),
             audio[0].createSetOutPointAction(tick(segments[0].sourceEndFrame / operation.plan.fps))];
           for (let i = 1; i < segments.length; i += 1) {
@@ -497,5 +585,5 @@
     };
   }
 
-  return { activeSequence, applyAdapter, claimExport, createExportWaiter, onActiveSourceChanged, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
+  return { activeSequence, applyAdapter, claimExport, createExportWaiter, createSourceWatch, onActiveSourceChanged, readySourceWatch, sourceRevision, releaseExport, resolvePresetPath, sequenceAudio, setPlayerPosition, stopWaiting };
 });

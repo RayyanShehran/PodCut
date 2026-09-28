@@ -16,7 +16,7 @@ PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors 
 - Generated PCM development input for exercising the real detector without Premiere
 - Analysis and review remain available; public Apply is temporarily disabled pending property-preservation and audio-freshness verification
 
-PodCut can acquire sequence audio from Premiere for analysis and review. Its candidate-building service is currently gated from public use: native Audio Gain changes bypass the metadata freshness check, and property preservation has not been established. PodCut does **not** transcribe speech or detect filler words. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
+PodCut can acquire sequence audio from Premiere for analysis and review. Apply remains gated: existing-track-item cloning preserved native gain in both tested retained sections, but lost the duplicated pair's A/V link relationship. No faithful replacement service is integrated. Tested gain changes now invalidate review through track events; metadata alone still cannot establish audio freshness, and broader event coverage remains unverified. PodCut does **not** transcribe speech or detect filler words. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
 
 ## Silence analysis
 
@@ -64,7 +64,7 @@ The Playwright check captures narrow and wide panel screenshots and verifies scr
 
 If a floating PodCut panel is hard to find, use **Window → UXP Plugins → PodCut** to reopen it. The pale floating title bar and red close button belong to Premiere; PodCut cannot style or replace them. For a stable location, drag the **PodCut panel tab** into a Premiere dock until the docking target appears, then select **Window → Workspaces → Save as New Workspace**. Do not drag the outer Windows title bar when docking. Closing the panel does not mean a Premiere audio export was cancelled; use PodCut's explicit **Stop waiting** control only when you want to stop its wait.
 
-PodCut rechecks the active sequence when shown and when Refresh is used. Results are cleared when the project, sequence, recipe, duration, track counts, or clip counts change. Other timeline/effect changes may not alter those fields, so reanalyze after any edit before trusting a review. Locate moves only the playhead to a proposal's start; it is unavailable for generated audio or stale results. Apply requires a fresh supported-source check immediately before mutation.
+PodCut rechecks the active sequence when shown and when Refresh is used. Project/sequence switches and active-track INFO_CHANGED events invalidate review, including the tested native gain adjustment and its Undo/Redo. Changes during analysis prevent its late result from restoring review. Reanalyze after any edit: master/mixer, external media and all effect-change coverage are not established by this event test. Locate moves only the playhead to a proposal's start; it is unavailable for generated audio or stale results. Internal preflight also checks the analysis revision; public Apply remains disabled.
 
 ## Constrained editing workflow and limits
 

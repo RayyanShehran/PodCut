@@ -287,6 +287,73 @@ test("Premiere project activation clears the old review and refreshes the source
   await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "false");
 });
 
+test("track invalidation discards an in-flight export result; reopening never duplicates listeners or restarts it", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.hostEvents = {};
+    window.trackEvents = [];
+    window.require = id => {
+      if (id === "uxp") return { entrypoints: { setup: hooks => {
+        if (typeof hooks.plugin?.create !== "function") throw Error("create method is not defined for plugin");
+        window.hooks = hooks;
+      } } };
+      if (id === "premierepro") return {
+        Constants: { ProjectEvent: { ACTIVATED: "project", OPENED: "open", CLOSED: "close" },
+          SequenceEvent: { ACTIVATED: "sequence", CLOSED: "sequenceClose" },
+          VideoTrackEvent: { INFO_CHANGED: "info" }, AudioTrackEvent: { INFO_CHANGED: "info" } },
+        EventManager: {
+          addGlobalEventListener: (name, handler) => { window.hostEvents[name] = handler; },
+          removeGlobalEventListener: name => { delete window.hostEvents[name]; },
+          addEventListener: (target, name, handler) => { window.trackEvents.push({ target, name, handler }); },
+          removeEventListener: (target, name, handler) => {
+            window.trackEvents = window.trackEvents.filter(x => x.target !== target || x.name !== name || x.handler !== handler);
+          }
+        },
+        Project: { getActiveProject: async () => window.watchSequence ? { getActiveSequence: async () => window.watchSequence } : null }
+      };
+      return null;
+    };
+  });
+  await page.goto(panelUrl);
+  await page.evaluate(async () => {
+    window.watchSequence = { getVideoTrackCount: async () => 1, getAudioTrackCount: async () => 1,
+      getVideoTrack: async () => "v1", getAudioTrack: async () => "a1" };
+    window.info = { state: "ready", projectId: "p", sequenceId: "s", name: "Track test", durationSeconds: 8,
+      videoTracks: 1, audioTracks: 1, videoClips: 1, audioClips: 1, sequence: {} };
+    PodCutPremiere.activeSequence = async () => window.info;
+    PodCutPremiere.sequenceAudio = () => {
+      window.exportCount = (window.exportCount || 0) + 1;
+      return new Promise(resolveExport => { window.finishExport = resolveExport; });
+    };
+    PodCutAudio.decodeWavAsync = async () => ({ sampleRate: 1000, channels: [Float32Array.from(Array(8000).fill(0))] });
+    window.hostEvents.sequence();
+    await PodCutPremiere.readySourceWatch();
+  });
+  await expect(page.locator("#sequenceName")).toHaveText("Track test");
+  await page.locator("#analyze").click();
+  await expect.poll(() => page.evaluate(() => window.exportCount)).toBe(1);
+  await page.evaluate(() => {
+    window.trackEvents.find(x => x.target === "a1").handler();
+    for (let i = 0; i < 3; i++) window.hooks.panels.podcutPanel.show(document.body);
+  });
+  await expect(page.locator("#review")).toBeHidden();
+  expect(await page.evaluate(() => window.exportCount)).toBe(1);
+  expect(await page.evaluate(() => window.trackEvents.length)).toBe(2);
+  await page.evaluate(() => window.finishExport(new ArrayBuffer(0)));
+  await expect(page.locator("#analyze")).toHaveText("Analyze Sequence");
+  await expect(page.locator("#review")).toBeHidden();
+  await expect(page.locator("#message")).toContainText("changed during analysis");
+  await expect(page.locator("#analyze")).toHaveAttribute("aria-disabled", "false");
+  await page.locator("#analyze").click();
+  await expect.poll(() => page.evaluate(() => window.exportCount)).toBe(2);
+  await page.evaluate(() => window.finishExport(new ArrayBuffer(0)));
+  await expect(page.locator("#review")).toBeVisible();
+  await page.evaluate(() => window.trackEvents.find(x => x.target === "a1").handler());
+  await expect(page.locator("#review")).toBeHidden();
+  await page.evaluate(() => window.hooks.plugin.destroy());
+  expect(await page.evaluate(() => window.trackEvents.length)).toBe(0);
+  expect(await page.evaluate(() => Object.keys(window.hostEvents).length)).toBe(0);
+});
+
 test("public Apply stays locked for property safety; review, zero-cut and transition checks remain usable", async ({ page }) => {
   await page.goto(panelUrl);
   await page.evaluate(() => {

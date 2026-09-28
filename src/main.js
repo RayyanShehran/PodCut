@@ -4,7 +4,7 @@
   const host = globalThis.PodCutPremiere;
   const applyService = globalThis.PodCutApply;
   const audio = globalThis.PodCutAudio;
-  const PUBLIC_APPLY_ENABLED = false; // Native gain preservation and audio freshness are unresolved.
+  const PUBLIC_APPLY_ENABLED = false; // Faithful linked-pair preservation and comprehensive freshness remain unverified.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");
@@ -26,6 +26,7 @@
   let refreshId = 0;
   let elapsedTimer = null;
   let initialized = false;
+  let sourceChangeId = 0;
   let reviewFilter = "all";
   const settingsKey = "podcut.settings.v1";
 
@@ -198,7 +199,7 @@
       if (manual && retryBlocked) retryBlocked = false;
       if (stale) message("Active sequence or available metadata changed. Analyze again.", "warning");
       else if (ready && next.audioTracks === 0) message("This sequence has no audio tracks to analyze.", "warning");
-      else if (!analysisResult && !lastCompletedApply) message("", "");
+      else if (manual && !analysisResult && !lastCompletedApply) message("", "");
     } catch (error) {
       if (id !== refreshId) return;
       sequenceInfo = { state: "error" };
@@ -217,13 +218,16 @@
     }
   }
 
-  function activeSourceChanged() {
+  function activeSourceChanged(change) {
+    sourceChangeId += 1;
     if (applying) return;
     clearAnalysis();
     sequenceInfo = null;
     $("#sequenceName").textContent = "Checking Premiere…";
     $("#sequenceMeta").textContent = "";
     syncControls();
+    if (change?.kind === "track" || analyzing)
+      message("Sequence content changed. This analysis is invalid; wait for any active export to finish, then analyze again.", "warning");
     if (!analyzing) refreshSequence(false);
   }
 
@@ -257,6 +261,7 @@
   function applyReview(confirmed) {
     return { key: reviewSource.key, recipe: reviewSource.recipe, currentRecipe: JSON.stringify(recipe),
       source: reviewSource.applySnapshot, analysisId: reviewSource.analysisId,
+      revision: reviewSource.revision,
       decisions: analysisResult.decisions, confirmed };
   }
 
@@ -394,6 +399,11 @@
     const id = ++operationId;
     const recipeSnapshot = clone(recipe);
     const source = { recipe: JSON.stringify(recipeSnapshot), sequence: sequenceInfo.sequence, key: sequenceKey(sequenceInfo) };
+    const generation = sourceChangeId;
+    const assertFresh = () => {
+      if (generation !== sourceChangeId || source.revision !== host.sourceRevision?.())
+        throw new Error("Sequence content changed during analysis. Analyze again after export activity ends.");
+    };
     analyzing = true;
     exportWaiting = true;
     syncControls();
@@ -407,6 +417,9 @@
     }, 1000);
     message("Premiere is rendering temporary sequence audio. The timeline remains unchanged.", "");
     try {
+      await host.readySourceWatch?.();
+      source.revision = host.sourceRevision?.();
+      assertFresh();
       const wav = await host.sequenceAudio(source.sequence, (status) => {
         if (!isCurrent(id)) return;
         latestDetail = status.stage === "waiting" ? `Promise ${status.detail.promise}; event ${status.detail.event}; output ${status.detail.output}` : JSON.stringify(status.detail);
@@ -414,6 +427,7 @@
         showDiagnostics(status.diagnostics);
       });
       if (!isCurrent(id)) return;
+      assertFresh();
       exportWaiting = false;
       clearTimer();
       syncControls();
@@ -421,10 +435,12 @@
         if (isCurrent(id)) progress("Decoding", `${done} of ${total} samples`, done, total);
       });
       if (!isCurrent(id)) return;
+      assertFresh();
       const result = await core.analyzeAudioAsync(pcm, recipeSnapshot, (done, total) => {
         if (isCurrent(id)) progress("Analyzing", `${done} of ${total} frames`, done, total);
       });
       if (!isCurrent(id)) return;
+      assertFresh();
       const current = await host.activeSequence();
       if (!isCurrent(id)) return;
       if (sequenceKey(current) !== source.key) {
@@ -437,6 +453,7 @@
         if (inspected.key !== source.key) throw new Error("Source changed after analysis.");
         source.applySnapshot = inspected.source;
       } catch (error) { source.applyError = error.message || String(error); }
+      assertFresh();
       source.analysisId = id;
       renderReview(result, source);
       $("#reviewLabel").textContent = "Premiere sequence";
@@ -458,6 +475,7 @@
         exportWaiting = false;
       }
       syncControls();
+      if (!sequenceInfo) refreshSequence(false);
     }
   }
 
@@ -587,10 +605,10 @@
     icon.addEventListener("error", () => { icon.hidden = true; $("#refreshFallback").hidden = false; });
     if (icon.complete && icon.naturalWidth > 0) { icon.hidden = false; $("#refreshFallback").hidden = true; }
     renderRecipe();
-    host.onActiveSourceChanged(activeSourceChanged);
+    const disposeSourceWatch = host.onActiveSourceChanged(activeSourceChanged);
     refreshSequence(false);
-    try { require("uxp").entrypoints.setup({ panels: { podcutPanel: { show: onShow } } }); }
-    catch (error) { console.info("PodCut running outside UXP; panel lifecycle unavailable."); }
+    try { require("uxp").entrypoints.setup({ plugin: { create() {}, destroy() { disposeSourceWatch?.(); clearTimer(); } }, panels: { podcutPanel: { show: onShow } } }); }
+    catch (error) { console.warn("PodCut panel lifecycle unavailable", error); }
   }
 
   init();

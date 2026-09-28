@@ -11,6 +11,10 @@
   const completed = new Set();
   const id = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requireTrue = (value, stage) => { if (value === false || value == null) throw new Error(`Premiere did not complete ${stage}.`); return value; };
+  function assertFresh(adapter, review) {
+    if (adapter.sourceRevision && (!Number.isInteger(review.revision) || adapter.sourceRevision() !== review.revision))
+      throw new Error("Sequence content changed after analysis, or change monitoring is unavailable. Analyze again.");
+  }
 
   async function prepare(adapter, review, onProgress) {
     if (preparing) throw new Error("An Apply preflight is already running. Wait for its Premiere inspection to finish.");
@@ -35,8 +39,10 @@
       if (++heartbeats === 12) clearInterval(heartbeat); // Keep host work locked, but bound diagnostic output.
     }, 5000);
     try {
+      assertFresh(adapter, review);
       report("inspect", "start");
       const current = await adapter.inspect(report);
+      assertFresh(adapter, review);
       report("inspect", "complete");
       if (current.key !== review.key || JSON.stringify(current.source) !== JSON.stringify(review.source))
         throw new Error("The source sequence changed after analysis. Analyze again.");
@@ -74,6 +80,8 @@
       stage("ready");
       if (!review.confirmed) throw new Error("Confirm the frame-aligned edit before Apply.");
       stage("creating candidate");
+      assertFresh(adapter, review);
+      operation.sourceRevision = review.revision;
       operation.candidateSequenceId = requireTrue(await adapter.createCandidate(operation), "candidate creation");
       for (const segment of prepared.plan.segments.slice(1)) {
         stage("creating retained subclip");
