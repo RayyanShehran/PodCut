@@ -469,6 +469,18 @@
     };
     return {
       sourceRevision,
+      async inspectDraft(record) {
+        const project = await ppro.Project.getActiveProject();
+        if (!project || guid(project) !== record.projectId || project.path !== record.projectPath)
+          throw new Error('Open the exact project that owns this assisted draft.');
+        const listed = await sequences(project);
+        const read = async id => {
+          const item = listed.get(id);
+          if (!item) throw new Error('Recorded source or candidate is missing. Do not resume this draft.');
+          return (await inspectSequence(project, await project.getSequence(item.guid))).source;
+        };
+        return { original: await read(record.originalSequenceId), candidate: await read(record.candidateSequenceId) };
+      },
       async inspect(trace) {
         const current = await activeSequence(trace);
         if (current.state !== "ready") throw new Error(current.message || "No active sequence.");

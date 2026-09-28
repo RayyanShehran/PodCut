@@ -36,8 +36,25 @@ function fixture() {
     nameCandidate: async (op, name) => { names.push(name); return true; },
     presentCandidate: async () => true, restoreOriginal: async () => { calls.push('restore'); }, reconcile: async () => {} };
   const run = proof(base, api, service, 'assisted.prproj');
-  return { run, review, calls, names, tracks, project, source, change: () => revision++ };
+  return { run, review, calls, names, tracks, project, source, base, api, change: () => revision++ };
 }
+test('experimental adapter requires explicit opt-in and enforces the same proven scope before mutation', async () => {
+  const make = require('../src/assisted.js');
+  for (const caseName of ['no opt-in', 'multiple cuts', 'other fps', 'unsaved project', 'supported']) {
+    const f = fixture();
+    f.review.experimentalConfirmed = caseName !== 'no opt-in';
+    if (caseName === 'multiple cuts') f.review.decisions[1].enabled = true;
+    if (caseName === 'other fps') f.review.source.fps = f.source.fps = 25;
+    if (caseName === 'unsaved project') f.review.source.projectPath = f.source.projectPath = f.project.path = '';
+    const run = make(f.base, f.api, service, { experimental: true });
+    if (caseName === 'no opt-in') await assert.rejects(run.prepare(f.review), /confirmation/);
+    else {
+      const op = await run.prepare(f.review);
+      assert.equal(op.status, caseName === 'supported' ? 'awaiting-manual-linking' : 'failed');
+    }
+    assert.equal(f.calls.filter(c => c === 'candidate').length, caseName === 'supported' ? 1 : 0);
+  }
+});
 test('assisted proof retains only enabled ranges and ends awaiting manual linking, never finished', async () => {
   const f = fixture(), op = await f.run.prepare(f.review);
   assert.equal(op.status, 'awaiting-manual-linking'); assert.equal(op.plan.outputFrames, 1034);
