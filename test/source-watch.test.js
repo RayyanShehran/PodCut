@@ -1,6 +1,45 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createSourceWatch } = require('../src/premiere.js');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+
+test('saved Premiere active-export changes and project switches reject stale results and recover', {
+  skip: !process.env.PODCUT_ASSISTED_PROOF
+}, () => {
+  const read = name => JSON.parse(readFileSync(join(process.env.PODCUT_ASSISTED_PROOF, name), 'utf8'));
+  const f = read('podcut-assisted-freshness.json');
+  const resolvedAt = events => events.find(e => e.detail?.promise === 'resolved true').at;
+  assert.equal(f.render.accepted, true);
+  assert.ok(f.render.exportStartedAt < f.render.changeRequestedAt);
+  assert.ok(f.render.changeReturnedAt < resolvedAt(f.render.events));
+  assert.ok(f.renderOutcome.revision > f.render.revisionBefore);
+  assert.equal(f.renderOutcome.reviewHidden, true);
+  assert.equal(f.renderOutcome.analyzeDisabled, 'false');
+  assert.equal(f.recovery.reviewHidden, false);
+  const s = read('podcut-assisted-project-switch.json');
+  assert.equal(s.before.reviewHidden, false);
+  assert.equal(s.after.reviewHidden, true);
+  assert.notEqual(s.after.projectPath, s.before.projectPath);
+  assert.ok(s.after.revision > s.before.revision);
+  assert.match(s.after.preflightError, /changed after analysis/);
+  assert.equal(s.after.count, s.before.count);
+  assert.equal(s.pending.openReturned, true);
+  assert.ok(s.pending.events.find(e => e.stage === 'exporting').at < s.pending.openRequestedAt);
+  assert.ok(s.pending.openFinishedAt < resolvedAt(s.pending.events));
+  assert.ok(s.pendingOutcome.revision > s.pending.revisionBefore);
+  assert.equal(s.pendingOutcome.reviewHidden, true);
+  assert.match(s.pendingOutcome.message, /changed during analysis/);
+  assert.equal(s.pendingOutcome.count, s.before.count);
+  assert.equal(s.recovery.reviewHidden, false);
+  assert.equal(s.recovery.analyzeDisabled, 'false');
+  assert.equal(s.publicApplyEnabled, false);
+  for (const [index, expected] of [
+    [0, [[0,1080,0,1080]]], [1, [[0,273,0,273],[273,999,354,1080]]]
+  ]) for (const track of s.finalRanges[index].tracks) {
+    assert.deepEqual(track.map(i => ['start','end','inPoint','outPoint'].map(k => Math.round(i[k] * 30))), expected);
+  }
+});
 
 function fixture() {
   const global = new Map(), listeners = [], changes = [];
