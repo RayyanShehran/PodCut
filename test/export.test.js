@@ -4,6 +4,55 @@ const { claimExport, createExportWaiter, releaseExport, resolvePresetPath } = re
 
 const delay = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test('sequence export uses existing sandbox storage when UXP temporary root disappears', async () => {
+  const { readFileSync } = require('node:fs');
+  const { runInNewContext } = require('node:vm');
+  for (const missing of [false, true, 'EACCES']) {
+    const files = [], removed = [], exports = [];
+    const fs = {
+      async lstat(path) {
+        if (path === 'plugin-temp:/') {
+          if (missing) throw Object.assign(Error(missing === 'EACCES' ? 'Permission denied' : 'No such file'),
+            { code: missing === 'EACCES' ? 'EACCES' : 'ENOENT' });
+          return {};
+        }
+        files.push(path); return { size: 128 };
+      },
+      async readFile() { return new ArrayBuffer(128); },
+      async unlink(path) { removed.push(path); }
+    };
+    const uxp = { host: { applicationPath: 'C:\\Adobe\\Premiere.exe', version: '26.5' },
+      storage: { localFileSystem: {
+        async getTemporaryFolder() { return { nativePath: 'C:\\scratch-temp' }; },
+        async getDataFolder() { return { nativePath: 'C:\\scratch-data' }; }
+      } } };
+    const pp = { Constants: { ExportType: { IMMEDIATELY: 1 }, OperationCompleteEvent: { EXPORT_MEDIA_COMPLETE: 'done' } },
+      EventManager: { addGlobalEventListener() {}, removeGlobalEventListener() {} },
+      EncoderManager: { getExportFileExtension: async () => 'wav', getManager: () => ({
+        async exportSequence(...args) { exports.push(args); return true; }
+      }) } };
+    const module = { exports: {} };
+    runInNewContext(readFileSync(require.resolve('../src/premiere.js'), 'utf8'), {
+      module, require: name => ({ fs, uxp, premierepro: pp })[name], console,
+      PodCutAudio: { wavInfo: () => ({ durationSeconds: 36, channels: 2, sampleRate: 48000, bitsPerSample: 16 }) },
+      setTimeout: (fn, ms) => setTimeout(fn, ms >= 600000 ? ms : 1), clearTimeout
+    });
+    const run = module.exports.sequenceAudio({ name: 'probe', getEndTime: async () => ({ seconds: 36 }) });
+    if (missing === 'EACCES') {
+      await assert.rejects(run, /Permission denied/);
+      assert.equal(exports.length, 0, 'Do not hide unrelated storage failures');
+    } else {
+      await run;
+      assert.equal(exports.length, 1);
+      assert.ok(exports[0][2].startsWith(missing ? 'C:\\scratch-data\\' : 'C:\\scratch-temp\\'));
+      const prefix = missing ? 'plugin-data:/' : 'plugin-temp:/';
+      assert.ok(files.every(path => path.startsWith(prefix)));
+      assert.deepEqual(removed, [files[0]], 'Cleanup must use the selected storage scheme');
+    }
+    module.exports.releaseExport(module.exports.claimExport()); // Preparation failure also releases the lock.
+  }
+});
+
 function waiter(startExport, inspectOutput = async () => ({ ready: false, detail: "missing" }), timing = {}) {
   let handler;
   let removed = 0;

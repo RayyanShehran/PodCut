@@ -198,7 +198,17 @@
     try {
       const uxp = require("uxp");
       const fs = require("fs");
-      const temp = await uxp.storage.localFileSystem.getTemporaryFolder();
+      let temp = await uxp.storage.localFileSystem.getTemporaryFolder();
+      let storageScheme = "plugin-temp:/";
+      try { await fs.lstat(storageScheme); }
+      catch (error) {
+        if (!/ENOENT|not found|no such file/i.test(`${error.code || ""} ${error.message || error}`)) throw error;
+        // UXP can retain a temporary-folder entry after its directory disappears.
+        // Use sandbox scratch storage, retaining unique names and normal cleanup.
+        temp = await uxp.storage.localFileSystem.getDataFolder();
+        storageScheme = "plugin-data:/";
+        log("storage", { fallback: storageScheme, reason: "Temporary directory missing" });
+      }
       if (operation.stopped) throw stoppedError();
       const name = `podcut-${operationId}.wav`;
       const separator = temp.nativePath.includes("\\") ? "\\" : "/";
@@ -220,7 +230,7 @@
       }
       if (operation.stopped) throw stoppedError();
 
-      const fileUrl = `plugin-temp:/${name}`;
+      const fileUrl = `${storageScheme}${name}`;
       const waiter = createExportWaiter({
       eventName: ppro.Constants.OperationCompleteEvent.EXPORT_MEDIA_COMPLETE,
       addListener: (eventName, handler) => ppro.EventManager.addGlobalEventListener(eventName, handler),
