@@ -287,10 +287,12 @@
   // This is conservative invalidation, not proof of every audio-affecting change.
   function createSourceWatch(ppro, callback) {
     const manager = ppro.EventManager;
+    const watchId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const trace = (action, detail) => console.info("PodCut source subscriptions", JSON.stringify({ watchId, action, ...detail }));
     let revision = 0, generation = 0, disposed = false, bindings = [], ready, bindingError;
     const clearTracks = () => {
       for (const [target, event, handler] of bindings) {
-        try { manager.removeEventListener(target, event, handler); }
+        try { manager.removeEventListener(target, event, handler); trace("remove-track", { event }); }
         catch (error) { console.warn("PodCut source listener cleanup", error); }
       }
       bindings = [];
@@ -316,6 +318,7 @@
             callback({ kind: "track", revision });
           };
           manager.addEventListener(track, event, handler);
+          trace("add-track", { event, generation: run });
           bindings.push([track, event, handler]);
         }
       })().catch(error => {
@@ -335,8 +338,11 @@
     };
     const globals = [ppro.Constants.ProjectEvent.ACTIVATED, ppro.Constants.ProjectEvent.OPENED,
       ppro.Constants.ProjectEvent.CLOSED, ppro.Constants.SequenceEvent.ACTIVATED, ppro.Constants.SequenceEvent.CLOSED];
-    for (const event of globals) manager.addGlobalEventListener(event, activated,
-      event === ppro.Constants.ProjectEvent.ACTIVATED || event === ppro.Constants.ProjectEvent.OPENED);
+    for (const event of globals) {
+      manager.addGlobalEventListener(event, activated,
+        event === ppro.Constants.ProjectEvent.ACTIVATED || event === ppro.Constants.ProjectEvent.OPENED);
+      trace("add-global", { event });
+    }
     bind();
     return {
       revision: () => revision,
@@ -350,7 +356,11 @@
         disposed = true;
         generation += 1;
         clearTracks();
-        for (const event of globals) manager.removeGlobalEventListener(event, activated);
+        for (const event of globals) {
+          manager.removeGlobalEventListener(event, activated);
+          trace("remove-global", { event });
+        }
+        trace("disposed", {});
       }
     };
   }
