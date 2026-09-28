@@ -25,7 +25,7 @@ test("controlled interview fixture has two internal pauses", { skip: !process.en
     const speech = audio.channels[0].subarray(start * info.sampleRate, end * info.sampleRate);
     let sumSquares = 0;
     let max = 0;
-    for (const sample of speech) { sumSquares += sample * sample; max = Math.max(max, sample); }
+    for (const sample of speech) { assert.ok(Number.isFinite(sample)); sumSquares += sample * sample; max = Math.max(max, Math.abs(sample)); }
     assert.ok(max < 0.8, `speech peak ${max} is too high`);
     assert.ok(Math.sqrt(sumSquares / speech.length) < 0.12, `speech RMS is too high`);
   }
