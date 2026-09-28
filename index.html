@@ -10,7 +10,7 @@
     <main id="app">
       <header class="app-header">
         <div class="brand">
-          <div><h1>PodCut</h1><span class="pill">Review only</span></div>
+          <div><h1>PodCut</h1><span class="pill">Experimental</span></div>
           <p>Find quiet sections before making an edit.</p>
         </div>
         <div id="refreshSequence" class="icon-button" role="button" tabindex="0" title="Refresh sequence" aria-label="Refresh sequence" aria-disabled="false">
@@ -97,7 +97,35 @@
             <div id="confirmApply" class="button" role="button" tabindex="0">Create new sequence</div>
             <div id="cancelApply" class="text-button" role="button" tabindex="0">Cancel</div>
           </div>
-          <p class="safety">Apply temporarily disabled: native Audio Gain preservation and audio freshness are not verified. Analysis and review remain available. The source is never overwritten. Full-workflow Undo is not one-step.</p>
+          <p class="safety">Automatic Apply remains disabled: comprehensive property preservation and audio freshness are unverified. The separate experimental assisted draft requires manual linking. The source is never overwritten. Full-workflow Undo is not one-step.</p>
+          <div class="apply-confirmation">
+            <h3>Experimental assisted draft</h3>
+            <p>One enabled internal cut, 30 fps, one matching ordinary V1/A1 source pair. Manual linking is required. Other built-in effect values, mixer/routing and external-media changes cannot be reliably verified. Not general effects support.</p>
+            <label class="toggle-label"><input id="assistedOptIn" type="checkbox" /><span>I verified the source selects as a linked V/A pair and accept these experimental limitations.</span></label>
+            <p id="assistedEligibility" class="apply-status"></p>
+            <div id="prepareAssisted" class="button" role="button" tabindex="-1" aria-disabled="true">Prepare assisted draft</div>
+            <div id="assistedConfirmation" hidden>
+              <p id="assistedConfirmationText"></p>
+              <div id="confirmAssisted" class="button" role="button" tabindex="-1" aria-disabled="true">Confirm: prepare assisted draft</div>
+              <div id="cancelAssisted" class="text-button" role="button" tabindex="0">Cancel</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="assistedHandoff" class="field-section" hidden>
+          <h2>Assisted draft — awaiting validation</h2>
+          <p id="assistedIdentity"></p>
+          <p id="assistedReconciliation" class="apply-status" aria-live="polite"></p>
+          <p id="assistedPairs"></p>
+          <p>Enable Premiere Linked Selection. Check each retained video selects only its matching audio. If a pair is unlinked, select that video and its corresponding audio only, then Clip &gt; Link. Repeat one pair at a time; never link all segments together.</p>
+          <div id="confirmManualLink" class="button" role="button" tabindex="-1" aria-disabled="true">I checked/linked each pair — review playback next</div>
+          <p id="assistedPlayback">Manual linking and playback are user checks, not programmatic verification. Save this project after linking.</p>
+        </section>
+
+        <section id="workRecovery" class="field-section" hidden>
+          <h3>Interrupted work — check Premiere</h3>
+          <p id="workRecoveryText">An earlier export or draft job may have outlived the plugin. No old review or operation will be resumed. Wait for Premiere export activity to end and inspect any partial draft before starting fresh.</p>
+          <div id="recoverWork" class="button" role="button" tabindex="0">I checked: prior work ended and partial drafts are inspected</div>
         </section>
 
         <section class="developer-section">
@@ -127,6 +155,8 @@
     <script src="src/core.js"></script>
     <script src="src/premiere.js"></script>
     <script src="src/apply.js"></script>
+    <script src="src/assisted.js"></script>
+    <script src="src/assisted-state.js"></script>
     <script src="src/main.js"></script>
   </body>
 </html>

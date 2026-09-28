@@ -11,7 +11,7 @@
       throw new Error('Source changed during assisted preparation. Analyze again.');
   };
   const checkPlan = op => {
-    if (op.plan.fps !== 30 || op.plan.segments.length !== 2)
+    if (op.cutCount !== 1 || op.plan.fps !== 30 || op.plan.segments.length !== 2)
       throw new Error('Assisted drafts require exactly one enabled internal cut at 30 fps.');
   };
   const candidate = async op => {

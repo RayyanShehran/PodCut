@@ -4,6 +4,7 @@
   const host = globalThis.PodCutPremiere;
   const applyService = globalThis.PodCutApply;
   const audio = globalThis.PodCutAudio;
+  const assistedState = globalThis.PodCutAssistedState;
   const PUBLIC_APPLY_ENABLED = false; // Faithful linked-pair preservation and comprehensive freshness remain unverified.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -29,6 +30,12 @@
   let sourceChangeId = 0;
   let reviewFilter = "all";
   const settingsKey = "podcut.settings.v1";
+  let interruptedWork = null;
+  let draftRecord = null;
+  let draftVerified = false;
+  let draftCheckId = 0;
+  let manualLinkReported = false;
+  let assistedConfirmationReview = null;
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const getPath = (path) => path.split(".").reduce((value, key) => value[key], recipe);
@@ -125,6 +132,8 @@
     $("#toggleDiagnostics").hidden = true;
     $("#diagnosticText").hidden = true;
     $("#applyConfirmation").hidden = true;
+    $("#assistedConfirmation").hidden = true;
+    assistedConfirmationReview = null;
   }
 
   function invalidateForRecipe() {
@@ -151,9 +160,19 @@
     $$('[data-filter], #enableVisible, #disableVisible, [data-locate-id]').forEach((control) =>
       setActionDisabledControl(control, busy || (control.dataset.locateId && reviewSource?.key === "generated")));
     const ready = sequenceInfo && sequenceInfo.state === "ready" && sequenceInfo.audioTracks > 0;
-    setActionDisabled("#analyze", applying || (analyzing ? !exportWaiting : retryBlocked || refreshing || !ready));
+    setActionDisabled("#analyze", applying || (analyzing ? !exportWaiting : interruptedWork || retryBlocked || refreshing || !ready));
     setActionDisabled("#apply", busy || !readyApply || !PUBLIC_APPLY_ENABLED);
     $("#analyze").textContent = analyzing ? (exportWaiting ? "Stop waiting" : "Analyzing…") : "Analyze Sequence";
+    $("#workRecovery").hidden = !interruptedWork;
+    setActionDisabled("#recoverWork", busy);
+    $("#assistedOptIn").disabled = busy || Boolean(interruptedWork);
+    const reason = assistedState.scopeError(readyApply);
+    $("#assistedEligibility").textContent = reason || "Experimental: manual linking and playback validation required. Undo is not one-step.";
+    const assistedBlocked = busy || interruptedWork || reason || !$("#assistedOptIn").checked;
+    setActionDisabled("#prepareAssisted", assistedBlocked);
+    setActionDisabled("#confirmAssisted", assistedBlocked);
+    setActionDisabled("#confirmManualLink", busy || !draftVerified ||
+      sequenceInfo?.projectPath !== draftRecord?.projectPath || sequenceInfo?.sequenceId !== draftRecord?.candidateSequenceId);
   }
 
   function setActionDisabledControl(control, disabled) {
@@ -211,6 +230,7 @@
     } finally {
       if (id === refreshId) refreshing = false;
       syncControls();
+      if (draftRecord && !applying) reconcileDraft();
       if (!refreshing && refreshQueued) {
         refreshQueued = false;
         refreshSequence(false);
@@ -270,6 +290,9 @@
     readyApply = null;
     setActionDisabled("#apply", true);
     $("#applyConfirmation").hidden = true;
+    $("#assistedConfirmation").hidden = true;
+    assistedConfirmationReview = null;
+    syncControls();
     if (!analysisResult || !reviewSource) return;
     if (reviewSource.key === "generated") { $("#applyStatus").textContent = "Generated audio cannot be applied to a Premiere sequence."; return; }
     if (reviewSource.applyError || !reviewSource.applySnapshot) {
@@ -294,7 +317,98 @@
       $("#applyStatus").textContent = `Unsupported or stale: ${error.message || error}`;
     } finally {
       applyCheckPending = false;
+      syncControls();
       if (applyCheckQueued) { applyCheckQueued = false; refreshApplyState(); }
+    }
+  }
+
+  function storeDraft(record) {
+    localStorage.setItem(assistedState.draftKey, JSON.stringify(record));
+    draftRecord = record;
+    draftVerified = false;
+    renderDraft();
+  }
+
+  function renderDraft() {
+    $("#assistedHandoff").hidden = !draftRecord;
+    if (!draftRecord) return;
+    $("#assistedIdentity").textContent = `${draftRecord.outputName || "Interrupted assisted draft"} (${draftRecord.candidateSequenceId || "candidate not yet identified"}). Project: ${draftRecord.projectPath || "unknown"}.`;
+    const plan = draftRecord.plan;
+    $("#assistedPairs").textContent = plan?.segments?.length === 2 ? plan.segments.map((part, i) =>
+      `Pair ${i + 1}: V1/A1 ${core.formatTimestamp(part.outputStartFrame / plan.fps)}–${core.formatTimestamp(part.outputEndFrame / plan.fps)}. ${i ? "Cloned tail: native linking required." : "Retained head: check its native linked selection."}`).join(" ") : "Inspect any partial candidate before retrying. No operation is automatically resumed.";
+    $("#assistedPlayback").textContent = manualLinkReported ? "User-reported linking only — awaiting playback review. Watch/listen around the join and ending, then save. No programmatic link or audible-quality PASS is claimed." :
+      "Manual linking and playback are user checks, not programmatic verification. Any earlier confirmation must be checked again after plugin reload. Save this project after linking.";
+    syncControls();
+  }
+
+  async function reconcileDraft() {
+    if (!draftRecord || applying) return;
+    const id = ++draftCheckId, generation = sourceChangeId, record = draftRecord;
+    draftVerified = false;
+    $("#assistedReconciliation").textContent = "Checking recorded project, original metadata and draft ranges…";
+    syncControls();
+    try {
+      if (record.status !== "awaiting-manual-linking") throw new Error("Interrupted/failed draft; inspect it before retrying. Never resumed automatically.");
+      const inspected = await host.applyAdapter().inspectDraft(record);
+      assistedState.validateDraft(record, inspected);
+      if (id !== draftCheckId || generation !== sourceChangeId || record !== draftRecord) return;
+      draftVerified = true;
+      $("#assistedReconciliation").textContent = "Recorded ranges match. Manual linking required; native links and other properties are not programmatically verified.";
+    } catch (error) {
+      if (id !== draftCheckId || generation !== sourceChangeId || record !== draftRecord) return;
+      manualLinkReported = false;
+      $("#assistedReconciliation").textContent = error.message || String(error);
+    } finally { if (id === draftCheckId) { renderDraft(); syncControls(); } }
+  }
+
+  function confirmAssisted() {
+    if (analyzing || applying || interruptedWork || !reviewSource || !$("#assistedOptIn").checked || assistedState.scopeError(readyApply)) return;
+    assistedConfirmationReview = JSON.stringify(applyReview(false));
+    $("#assistedConfirmationText").textContent = `Prepare a separate assisted draft from “${readyApply.current.source.name}”? Only the one enabled cut removes ${readyApply.removedFrames} frames; retain ${readyApply.plan.outputFrames} frames. The original stays unchanged. The cloned tail requires manual native A/V linking. Built-in effect values, mixer/routing and external-media freshness remain unverified. This is an experimental draft, not finished output. Full-workflow Undo is not one-step.`;
+    $("#assistedConfirmation").hidden = false;
+  }
+
+  async function runAssisted() {
+    if (analyzing || applying || interruptedWork || !reviewSource || !$("#assistedOptIn").checked || assistedState.scopeError(readyApply) ||
+        !assistedConfirmationReview || assistedConfirmationReview !== JSON.stringify(applyReview(false))) return;
+    const review = clone(applyReview(true));
+    let work;
+    try { work = assistedState.begin(localStorage, "assisted", { projectPath: review.source.projectPath, originalSequenceId: review.source.sequenceId }); }
+    catch (error) { message(error.message || String(error), "error"); return; }
+    const id = ++operationId;
+    applying = true;
+    manualLinkReported = false;
+    applyCheckId += 1;
+    $("#assistedConfirmation").hidden = true;
+    syncControls();
+    let returned = false;
+    try {
+      const workflow = globalThis.PodCutAssisted(host.applyAdapter(), require("premierepro"), applyService, { experimental: true });
+      const record = op => ({ version: 1, status: op.status, id: op.id, projectId: op.projectId,
+        projectPath: op.sourceSnapshot?.projectPath, originalSequenceId: op.originalSequenceId,
+        candidateSequenceId: op.candidateSequenceId, outputName: op.outputName, sourceSnapshot: op.sourceSnapshot,
+        plan: op.plan, cuts: review.decisions.filter(d => d.enabled).map(d => ({ cutStart: d.cutStart, cutEnd: d.cutEnd })), errors: op.errors });
+      const op = await workflow.prepare({ ...review, experimentalConfirmed: true }, (stage, operation) => {
+        if (!isCurrent(id)) return;
+        if (operation.plan) storeDraft(record(operation));
+        progress(stage, "Experimental assisted draft; original unchanged; native linking is a separate user step.");
+      });
+      returned = true;
+      if (!isCurrent(id)) return;
+      storeDraft(record(op));
+      clearAnalysis();
+      message(op.status === "awaiting-manual-linking" ? `Manual linking required: ${op.outputName} (${op.candidateSequenceId}). Save and validate this draft; it is not finished.` :
+        `Assisted draft failed: ${op.errors.join(" ")} Partial candidate: ${op.candidateSequenceId || "none identified"}. Inspect before fresh retry.`, op.status === "failed" ? "error" : "");
+    } catch (error) {
+      message(`Assisted preparation interrupted: ${error.message || error}. Inspect any candidate before retrying.`, "error");
+    } finally {
+      if (isCurrent(id)) {
+        if (returned) assistedState.finish(localStorage, work);
+        interruptedWork = assistedState.pending(localStorage);
+        applying = false;
+        syncControls();
+        refreshSequence(false);
+      }
     }
   }
 
@@ -392,9 +506,14 @@
       }
       return;
     }
+    if (interruptedWork) return;
     const errors = core.validateRecipe(recipe);
     if (errors.length) return message(errors[0], "error");
     if (!sequenceInfo || sequenceInfo.state !== "ready") return;
+    let work;
+    try { work = assistedState.begin(localStorage, "export", { projectPath: sequenceInfo.projectPath, sequenceId: sequenceInfo.sequenceId }); }
+    catch (error) { message(error.message || String(error), "error"); return; }
+    let nativeStarted = false, exportReturned = false, exportRefused = false;
     lastCompletedApply = null;
     const id = ++operationId;
     const recipeSnapshot = clone(recipe);
@@ -422,10 +541,12 @@
       assertFresh();
       const wav = await host.sequenceAudio(source.sequence, (status) => {
         if (!isCurrent(id)) return;
+        if (status.stage === "exporting") nativeStarted = true;
         latestDetail = status.stage === "waiting" ? `Promise ${status.detail.promise}; event ${status.detail.event}; output ${status.detail.output}` : JSON.stringify(status.detail);
         progress(status.stage === "preparing" || status.stage === "preset" ? "Preparing" : "Exporting audio", latestDetail, undefined, undefined, status.elapsedMs);
         showDiagnostics(status.diagnostics);
       });
+      exportReturned = true;
       if (!isCurrent(id)) return;
       assertFresh();
       exportWaiting = false;
@@ -462,6 +583,7 @@
     } catch (error) {
       if (!isCurrent(id)) return;
       console.error("PodCut sequence analysis failed", error);
+      exportRefused = error.code === "EXPORT_NOT_STARTED";
       showDiagnostics(error.diagnostics);
       $("#progress").hidden = true;
       if (error.code === "STOPPED_WAITING" || error.code === "EXPORT_TIMEOUT") {
@@ -470,6 +592,8 @@
       } else message(error.message || "Sequence audio analysis failed. Open Developer for diagnostics.", "error");
     } finally {
       if (isCurrent(id)) {
+        if (exportReturned || !nativeStarted || exportRefused) assistedState.finish(localStorage, work);
+        interruptedWork = assistedState.pending(localStorage);
         clearTimer();
         analyzing = false;
         exportWaiting = false;
@@ -581,6 +705,33 @@
     $("#apply").addEventListener("click", confirmApply);
     $("#confirmApply").addEventListener("click", runApply);
     $("#cancelApply").addEventListener("click", () => { $("#applyConfirmation").hidden = true; });
+    $("#assistedOptIn").addEventListener("change", () => {
+      assistedConfirmationReview = null;
+      $("#assistedConfirmation").hidden = true;
+      syncControls();
+    });
+    $("#prepareAssisted").addEventListener("click", confirmAssisted);
+    $("#confirmAssisted").addEventListener("click", runAssisted);
+    $("#cancelAssisted").addEventListener("click", () => { assistedConfirmationReview = null; $("#assistedConfirmation").hidden = true; });
+    $("#confirmManualLink").addEventListener("click", async () => {
+      if (analyzing || applying) return;
+      await reconcileDraft();
+      if (!draftVerified || sequenceInfo?.sequenceId !== draftRecord.candidateSequenceId || sequenceInfo?.projectPath !== draftRecord.projectPath) return;
+      manualLinkReported = true;
+      storeDraft({ ...draftRecord, manualLinkReportedAt: Date.now() });
+      renderDraft();
+      reconcileDraft();
+    });
+    $("#recoverWork").addEventListener("click", () => {
+      if (analyzing || applying || refreshing || !interruptedWork) return;
+      // Explicit user acknowledgement, not a cancellation or inferred completion event.
+      localStorage.removeItem(assistedState.workKey);
+      interruptedWork = null;
+      retryBlocked = false;
+      clearAnalysis();
+      message("Prior work acknowledged as ended. Old review discarded; refresh and analyze again.", "warning");
+      refreshSequence(false);
+    });
     $("#testAudio").addEventListener("click", analyzeTestAudio);
     $("#toggleDiagnostics").addEventListener("click", () => {
       const details = $("#diagnosticText");
@@ -604,10 +755,19 @@
     icon.addEventListener("load", () => { icon.hidden = false; $("#refreshFallback").hidden = true; });
     icon.addEventListener("error", () => { icon.hidden = true; $("#refreshFallback").hidden = false; });
     if (icon.complete && icon.naturalWidth > 0) { icon.hidden = false; $("#refreshFallback").hidden = true; }
+    try {
+      interruptedWork = assistedState.pending(localStorage);
+      const raw = localStorage.getItem(assistedState.draftKey);
+      if (raw) draftRecord = JSON.parse(raw);
+    } catch (error) { interruptedWork = { kind: "unknown" }; message("Work state could not be read. Inspect prior work before recovery.", "error"); }
     renderRecipe();
+    renderDraft();
     const disposeSourceWatch = host.onActiveSourceChanged(activeSourceChanged);
     refreshSequence(false);
-    try { require("uxp").entrypoints.setup({ plugin: { create() {}, destroy() { disposeSourceWatch?.(); clearTimer(); } }, panels: { podcutPanel: { show: onShow } } }); }
+    try { require("uxp").entrypoints.setup({ plugin: { create() {}, destroy() {
+      operationId += 1; refreshId += 1; applyCheckId += 1; draftCheckId += 1;
+      disposeSourceWatch?.(); clearTimer(); // Journal survives even if this callback is not delivered.
+    } }, panels: { podcutPanel: { show: onShow } } }); }
     catch (error) { console.warn("PodCut panel lifecycle unavailable", error); }
   }
 

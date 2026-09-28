@@ -76,6 +76,7 @@
       operation.projectId = prepared.current.source.projectId;
       operation.sourceSnapshot = prepared.current.source;
       operation.plan = prepared.plan;
+      operation.cutCount = prepared.cutCount;
       operation.outputName = prepared.outputName;
       stage("ready");
       if (!review.confirmed) throw new Error("Confirm the frame-aligned edit before Apply.");

@@ -450,7 +450,7 @@ test("isolated panel Apply honors enabled cuts, locks double clicks, and reports
   await page.locator("#apply").click();
   await expect(page.locator("#applyConfirmationText")).toContainText("Interview — PodCut");
   await expect(page.locator("#applyConfirmationText")).toContainText("Do not use adjusted Audio Gain or modified built-in effects");
-  await expect(page.locator(".safety")).toContainText("native Audio Gain preservation and audio freshness are not verified");
+  await expect(page.locator(".safety")).toContainText("Automatic Apply remains disabled");
   await page.locator("#confirmApply").click();
   await page.evaluate(() => document.querySelector("#confirmApply").click());
   await expect(page.locator("#preset")).toBeDisabled();
@@ -485,4 +485,117 @@ test("isolated panel Apply honors enabled cuts, locks double clicks, and reports
   await page.evaluate(() => window.resolveCandidate("retry-id"));
   await expect(page.locator("#applyStatus")).toContainText("Completed: Interview — PodCut (retry-id)");
   expect(await page.evaluate(() => window.calls.filter(x => x === "candidate").length)).toBe(3);
+});
+
+async function wireAssistedPanel(page) {
+  await page.evaluate(() => {
+    window.require = id => id === 'premierepro' ? {} : null;
+    const item = { projectItemId:'media', start:0,end:36,inPoint:0,outPoint:36,trackIndex:0,speed:1 };
+    window.assistedSource = { projectId:'p',projectPath:'test.prproj',sequenceId:'s',name:'Interview',durationSeconds:36,
+      fps:30,videoTracks:1,audioTracks:1,captionTracks:0,videoTransitions:0,audioTransitions:0,
+      videoItems:[{...item}],audioItems:[{...item}],mediaPath:'interview.mov',unsupportedEffects:[] };
+    window.assistedInfo = { ...assistedSource,state:'ready',videoClips:1,audioClips:1,sequence:{} };
+    window.assistedSubmissions = 0;
+    PodCutPremiere.activeSequence = async () => assistedInfo;
+    PodCutPremiere.sourceRevision = () => 1;
+    PodCutPremiere.sequenceAudio = async () => new ArrayBuffer(0);
+    PodCutAudio.decodeWavAsync = async () => ({sampleRate:1000,channels:[new Float32Array(36000)]});
+    PodCutCore.analyzeAudioAsync = async () => ({durationSeconds:36,silenceCount:2,longPauseCount:0,
+      decisions:[{id:'one',type:'silence',enabled:true,cutStart:9.07,cutEnd:11.8,removeSeconds:2.73},
+        {id:'two',type:'silence',enabled:true,cutStart:22.49,cutEnd:25.61,removeSeconds:3.12}]});
+    window.draftInspection = record => {
+      if (assistedInfo.projectPath !== record.projectPath) throw Error('Open the exact project that owns this assisted draft.');
+      const parts = record.plan.segments.map(s => ({...item,start:s.outputStartFrame/30,end:s.outputEndFrame/30,
+        inPoint:s.sourceStartFrame/30,outPoint:s.sourceEndFrame/30}));
+      return {original:assistedSource,candidate:{...assistedSource,sequenceId:record.candidateSequenceId,
+        durationSeconds:record.plan.outputFrames/30,videoItems:parts,audioItems:structuredClone(parts)}};
+    };
+    PodCutPremiere.applyAdapter = () => ({sourceRevision:()=>1,
+      inspect:async()=>({key:PodCutCore.sequenceKey(assistedInfo),source:assistedSource}),inspectDraft:async r=>draftInspection(r)});
+    // Panel-state mock only; actual adapter construction has unit and separate native proof.
+    PodCutAssisted = () => ({prepare:async (review,stage) => {
+      assistedSubmissions++;
+      const cuts = review.decisions.filter(d=>d.enabled).map(d=>({cutStart:d.cutStart,cutEnd:d.cutEnd}));
+      const op = {id:'operation',projectId:'p',originalSequenceId:'s',candidateSequenceId:'draft-id',
+        outputName:'PodCut ASSISTED DRAFT — linking required',sourceSnapshot:assistedSource,
+        plan:PodCutCore.planSimpleEdit({durationSeconds:36,sourceInSeconds:0,fps:30,cuts}),status:'preparing',errors:[]};
+      stage('creating candidate',op);
+      await new Promise(resolve=>{window.finishAssisted=resolve;});
+      op.status = window.failAssisted ? 'failed' : 'awaiting-manual-linking';
+      if (window.failAssisted) op.errors=['Injected failure; partial draft isolated'];
+      else assistedInfo={...assistedInfo,sequenceId:'draft-id',videoClips:2,audioClips:2,durationSeconds:op.plan.outputFrames/30};
+      return op;
+    }});
+    window.hooks.panels.podcutPanel.show(document.body);
+  });
+  await expect(page.locator('#sequenceName')).toHaveText('Interview');
+}
+
+async function assistedHooks(page) {
+  await page.addInitScript(() => { window.require = id => id==='uxp' ? {entrypoints:{setup:h=>{window.hooks=h;}}} : null; });
+}
+
+test('distinct experimental panel flow enforces opt-in/one cut, duplicate lock and reconciled handoff after reload', async ({page}) => {
+  await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
+  await page.locator('#analyze').click();
+  await expect(page.locator('#assistedEligibility')).toContainText('exactly one enabled');
+  await page.locator('#assistedOptIn').check();
+  await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','true');
+  await page.locator('#decisions input').last().uncheck();
+  await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','false');
+  await expect(page.locator('#apply')).toHaveAttribute('aria-disabled','true');
+  await page.locator('#prepareAssisted').click();
+  await expect(page.locator('#assistedConfirmationText')).toContainText('original stays unchanged');
+  await expect(page.locator('#assistedConfirmationText')).toContainText('Undo is not one-step');
+  await page.locator('#confirmAssisted').click();
+  await page.evaluate(()=>{document.querySelector('#confirmAssisted').click();hooks.panels.podcutPanel.show(document.body);});
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(1);
+  await expect(page.locator('#preset')).toBeDisabled();
+  await page.evaluate(()=>finishAssisted());
+  await expect(page.locator('#assistedIdentity')).toContainText('draft-id');
+  await expect(page.locator('#assistedReconciliation')).toContainText('Recorded ranges match');
+  await expect(page.locator('#assistedPairs')).toContainText('00:00:09.100');
+  await expect(page.locator('#assistedPairs')).toContainText('Cloned tail: native linking required');
+  await page.locator('#confirmManualLink').click();
+  await expect(page.locator('#assistedPlayback')).toContainText('User-reported linking only');
+  await page.reload(); await wireAssistedPanel(page);
+  await expect(page.locator('#assistedIdentity')).toContainText('draft-id');
+  await expect(page.locator('#review')).toBeHidden();
+  await expect(page.locator('#assistedOptIn')).not.toBeChecked();
+  await expect(page.locator('#assistedPlayback')).toContainText('checked again after plugin reload');
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(0);
+  await page.evaluate(()=>{assistedInfo.projectPath='other.prproj';hooks.panels.podcutPanel.show(document.body);});
+  await expect(page.locator('#assistedReconciliation')).toContainText('exact project');
+  await expect(page.locator('#confirmManualLink')).toHaveAttribute('aria-disabled','true');
+});
+
+test('reload during pending export blocks new jobs until explicit recovery and discards old review', async ({page}) => {
+  await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
+  await page.evaluate(()=>{PodCutPremiere.sequenceAudio=(_,cb)=>{
+    cb({stage:'exporting',detail:{},elapsedMs:0,diagnostics:[]});return new Promise(()=>{});
+  };});
+  await page.locator('#analyze').click();
+  await expect(page.locator('#analyze')).toHaveText('Stop waiting');
+  await page.reload(); await wireAssistedPanel(page);
+  await expect(page.locator('#workRecovery')).toBeVisible();
+  await expect(page.locator('#analyze')).toHaveAttribute('aria-disabled','true');
+  await page.locator('#refreshSequence').click();
+  await expect(page.locator('#analyze')).toHaveAttribute('aria-disabled','true');
+  await expect(page.locator('#review')).toBeHidden();
+  await page.locator('#recoverWork').click();
+  await expect(page.locator('#workRecovery')).toBeHidden();
+  await expect(page.locator('#analyze')).toHaveAttribute('aria-disabled','false');
+});
+
+test('failed assisted panel draft never becomes a completed or linking-approved result', async ({page}) => {
+  await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
+  await page.locator('#analyze').click(); await page.locator('#decisions input').last().uncheck();
+  await page.locator('#assistedOptIn').check();
+  await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','false');
+  await page.locator('#prepareAssisted').click(); await page.locator('#confirmAssisted').click();
+  await page.evaluate(()=>{window.failAssisted=true;finishAssisted();});
+  await expect(page.locator('#message')).toContainText('Assisted draft failed');
+  await expect(page.locator('#assistedReconciliation')).toContainText('Interrupted/failed draft');
+  await expect(page.locator('#confirmManualLink')).toHaveAttribute('aria-disabled','true');
+  expect(await page.evaluate(()=>localStorage.getItem(PodCutAssistedState.workKey))).toBeNull();
 });
