@@ -14,9 +14,18 @@ PodCut is a controllable auto-editing assistant for Adobe Premiere Pro. Editors 
 - Reviewable edit decisions with filters, bulk enable/disable, Locate playhead navigation, and updated duration estimates
 - Validated recipe and disclosure preferences stored locally; Reset settings is under Developer
 - Generated PCM development input for exercising the real detector without Premiere
-- Analysis and review remain available; public Apply is temporarily disabled pending property-preservation and audio-freshness verification
+- Analysis and review remain available; automatic Apply stays disabled
+- Separate experimental assisted draft: one enabled internal cut, 30 fps, one ordinary matching V1/A1 pair; manual native linking required
 
-PodCut can acquire sequence audio from Premiere for analysis and review. Apply remains gated: existing-track-item cloning preserved native gain in both tested retained sections, but lost the duplicated pair's A/V link relationship. No faithful replacement service is integrated. Tested gain changes now invalidate review through track events; metadata alone still cannot establish audio freshness, and broader event coverage remains unverified. PodCut does **not** transcribe speech or detect filler words. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
+PodCut can acquire sequence audio from Premiere for analysis and review. Automatic Apply remains gated. The separate opt-in assisted path retains tested native gain using track-item clones, but its cloned tail requires manual native A/V linking. It is an experimental draft, not finished output or general effects support. Tested gain changes invalidate review through track events; metadata alone cannot establish audio freshness, and broader event coverage remains unverified. PodCut does **not** transcribe speech or detect filler words. Generated test audio remains available as synthetic input to the real detector; its results are not canned or mocked.
+
+### Experimental assisted draft
+
+Keep only one internal cut enabled. Verify the source selects as a linked video/audio pair, accept the stated limitations, then choose **Prepare assisted draft** and confirm. The original stays unchanged; a separate **PodCut ASSISTED DRAFT — linking required** is structurally checked. Check the retained head's linked selection. Select only the tail video and its corresponding audio, then **Clip > Link**; never link all segments together. The panel lists both pairs' exact positions. Its linking confirmation records your report, not a programmatic link check or playback PASS. Save after linking. Full-workflow Undo is not one-step.
+
+On reload, consent and review reset; a recorded draft must match its project, original metadata, candidate identity and ranges before proceeding. Interrupted work blocks new jobs until you check that Premiere export activity ended and any partial draft is inspected. Reloading does not cancel a native export. No operation automatically resumes.
+
+Host-proven: tested -6 dB native gain, trimmed source ranges and matching A/V timing in the clone path. Reliably rejected: extra occupied tracks/items, transitions, nested/offline/multicam/merged media, non-normal speed, disabled/reversed items, unsupported component names and detectable keyframes, wrong frame rate or cut count. Unknown: other static built-in effect values, mixer/routing, comprehensive event coverage and external-media changes. Opt-in acknowledges these unknowns; it does not detect or enforce an “unmodified clips only” restriction.
 
 ## Silence analysis
 

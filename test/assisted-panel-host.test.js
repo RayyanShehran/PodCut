@@ -1,0 +1,51 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const state = require('../src/assisted-state.js');
+const core = require('../src/core.js');
+
+test('saved Premiere panel proof: one draft, reconciled reopening and interrupted render lock',
+  { skip: !process.env.PODCUT_ASSISTED_PANEL_PROOF }, () => {
+    // Audits saved native observations; this test does not drive or listen to Premiere.
+    const read = name => JSON.parse(fs.readFileSync(path.join(process.env.PODCUT_ASSISTED_PANEL_PROOF, name), 'utf8'));
+    const proof = read('assisted-panel-proof-2026-09-29.json');
+    assert.equal(proof.nativeDoubleClick, true);
+    assert.equal(proof.countAfter - proof.countBefore, 1);
+    assert.equal(proof.originalUnchanged, true);
+    assert.equal(proof.saved, true);
+    assert.equal(proof.record.status, 'awaiting-manual-linking');
+    assert.equal(state.validateDraft(proof.record, proof.final.inspected).outputFrames, 999);
+    const canonical = s => ({ ...s, projectPath: core.projectPathKey(s.projectPath) });
+    assert.deepEqual(canonical(proof.final.inspected.original), canonical(proof.sourceBefore));
+    assert.equal(proof.final.count, proof.countAfter);
+    assert.equal(proof.final.saved, true);
+    assert.equal(proof.final.temporaryProbeAbsent, true);
+    assert.equal(proof.final.publicApplyDisabled, 'true');
+    assert.equal(proof.afterDraftReopen.manualDisabled, 'true');
+    assert.match(proof.afterDraftReopen.reconciliation, /exact project/);
+    assert.equal(proof.afterPluginReload.optIn, false);
+    assert.equal(proof.afterPluginReload.rootCount, 1);
+    assert.match(proof.afterPluginReload.reconciliation, /Recorded ranges match/);
+    assert.equal(proof.pendingAnalysisReopen.exports, 1);
+    assert.equal(proof.pendingAnalysisReopen.nativeExportAlreadyComplete, true);
+    assert.equal(proof.pendingAnalysisReopen.afterRelease.job, null);
+    assert.equal(proof.pendingAnalysisReopen.afterRelease.reviewHidden, true);
+    assert.match(proof.pendingAnalysisReopen.afterRelease.message, /changed during analysis/);
+    assert.equal(proof.pendingReloadAfter.oldHoldAbsent, true);
+    assert.equal(proof.pendingReloadAfter.job.id, proof.pendingReloadBefore.job.id);
+    assert.equal(proof.pendingReloadAfter.analyzeDisabled, 'true');
+    assert.equal(proof.recovery.reviewHidden, false);
+    assert.equal(proof.recovery.job, null);
+    const render = read('assisted-render-reload-2026-09-29.json');
+    const started = render.events.find(e => e.stage === 'exporting');
+    assert.ok(started && started.at < render.nativeReloadActionAt);
+    assert.ok(render.events.some(e => e.detail.promise === 'pending'));
+    assert.equal(render.events.some(e => e.stage === 'ready'), false);
+    assert.equal(render.after.job.id, render.job.id);
+    assert.equal(render.after.oldRuntimeAbsent, true);
+    assert.equal(render.after.recoveryVisible, true);
+    assert.equal(render.after.analyzeDisabled, 'true');
+    assert.equal(render.after.reviewHidden, true);
+    assert.equal(render.after.count, proof.countAfter);
+  });
