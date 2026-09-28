@@ -113,3 +113,20 @@ test('listener setup failure blocks analysis readiness instead of pretending fre
   assert.equal(watch.revision(), 1);
   watch.dispose();
 });
+
+test('one native disposal failure does not skip the remaining registrations or reactivate callbacks', async () => {
+  const f = fixture(), removed = [];
+  const watch = createSourceWatch(f.pp, event => f.changes.push(event));
+  await watch.ready();
+  const old = f.global.get('project');
+  f.pp.EventManager.removeGlobalEventListener = name => {
+    removed.push(name);
+    if (name === 'project') throw Error('native removal failed');
+    f.global.delete(name);
+  };
+  watch.dispose(); watch.dispose(); old();
+  assert.equal(removed.length, 5);
+  assert.equal(f.listeners.length, 0);
+  assert.equal(f.changes.length, 0);
+  await assert.rejects(watch.ready(), /monitoring unavailable/);
+});

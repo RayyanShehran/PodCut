@@ -357,8 +357,10 @@
         generation += 1;
         clearTracks();
         for (const event of globals) {
-          manager.removeGlobalEventListener(event, activated);
-          trace("remove-global", { event });
+          try {
+            manager.removeGlobalEventListener(event, activated);
+            trace("remove-global", { event });
+          } catch (error) { console.warn("PodCut source listener cleanup", error); }
         }
         trace("disposed", {});
       }

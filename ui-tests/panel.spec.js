@@ -585,6 +585,7 @@ test('distinct experimental panel flow enforces opt-in/one cut, duplicate lock a
   await expect(page.locator('#assistedConfirmationText')).toContainText('Undo is not one-step');
   await page.locator('#confirmAssisted').click();
   await expect.poll(()=>page.evaluate(()=>assistedSubmissions)).toBe(1);
+  expect(await page.evaluate(()=>assistedExports)).toBe(3); // Analysis + both boundaries; no reopen callback needed.
   await page.evaluate(()=>{document.querySelector('#confirmAssisted').click();hooks.panels.podcutPanel.show(document.body);});
   expect(await page.evaluate(()=>assistedSubmissions)).toBe(1);
   await expect(page.locator('#preset')).toBeDisabled();
