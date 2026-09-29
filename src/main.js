@@ -710,6 +710,7 @@
   function init() {
     if (initialized) return;
     initialized = true;
+    $("#buildIdentity").textContent = globalThis.PodCutBuild || "Build identity unavailable";
     $$('[role="button"]').forEach((control) => {
       control.addEventListener("click", (event) => {
         if (control.getAttribute("aria-disabled") === "true") event.stopImmediatePropagation();

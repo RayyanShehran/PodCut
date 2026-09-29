@@ -95,6 +95,42 @@ test("recipe changes invalidate review and long text wraps", async ({ page }) =>
   await expect(page.locator("#analyze")).toBeVisible();
 });
 
+test('short narrow panel exposes availability without review and long handoff controls fit', async ({page}) => {
+  await page.setViewportSize({width:250,height:210}); await page.goto(panelUrl);
+  await expect(page.locator('#review')).toBeHidden();
+  await expect(page.locator('#availability')).toContainText('temporarily unavailable pending validation');
+  const notice = await page.locator('#availability p').first().boundingBox();
+  expect(notice.y).toBeGreaterThanOrEqual(0); expect(notice.y + notice.height).toBeLessThanOrEqual(210);
+  await page.evaluate(()=>{
+    document.getElementById('assistedHandoff').hidden=false;
+    document.getElementById('assistedIdentity').textContent='C:\\Projects\\'+'VeryLongProjectName'.repeat(15)+'.prproj';
+  });
+  await page.locator('#confirmManualLink').scrollIntoViewIfNeeded();
+  const overflow = await page.evaluate(()=>{
+    const e=document.getElementById('confirmManualLink'),p=document.getElementById('assistedIdentity'),app=document.getElementById('app');
+    return {button:e.scrollHeight-e.clientHeight,path:p.scrollWidth-p.clientWidth,app:app.scrollWidth-app.clientWidth,height:e.getBoundingClientRect().height};
+  });
+  expect(overflow.button).toBeLessThanOrEqual(1); expect(overflow.path).toBeLessThanOrEqual(1);
+  expect(overflow.app).toBeLessThanOrEqual(1); expect(overflow.height).toBeGreaterThan(32);
+  await page.locator('#analyze').scrollIntoViewIfNeeded(); await expect(page.locator('#analyze')).toBeVisible();
+});
+
+test('normal services remain locked even if button disabled attributes are removed', async ({page}) => {
+  await page.goto(panelUrl);
+  const outcomes=await page.evaluate(async()=>{
+    document.getElementById('apply').setAttribute('aria-disabled','false');
+    document.getElementById('prepareAssisted').setAttribute('aria-disabled','false');
+    const adapter=new Proxy({}, {get(){throw Error('Unexpected host access');}}),errors=[];
+    for(const call of [()=>PodCutApply.apply(adapter,{confirmed:true}),
+      ()=>PodCutAssisted(adapter,{},PodCutApply,{experimental:true}).prepare({experimentalConfirmed:true,confirmed:true})]) {
+      try{await call();errors.push('Unexpected acceptance');}catch(e){errors.push(e.message);}
+    }
+    return errors;
+  });
+  expect(outcomes[0]).toContain('unavailable pending validation');
+  expect(outcomes[1]).toContain('temporarily unavailable');
+});
+
 test("host-safe controls keep explicit geometry, typography, and icons", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 520 });
   await page.goto(panelUrl);
@@ -417,6 +453,9 @@ test("public Apply stays locked for property safety; review, zero-cut and transi
 });
 
 test("isolated panel Apply honors enabled cuts, locks double clicks, and reports the separate output", async ({ page }) => {
+  const service = readFileSync(resolve(__dirname, '..', 'src', 'apply.js'), 'utf8');
+  await page.route('**/src/apply.js', route => route.fulfill({contentType:'text/javascript',
+    body:service.replace('const MUTATION_ENABLED = false;', 'const MUTATION_ENABLED = true;')}));
   const script = readFileSync(resolve(__dirname, "..", "src", "main.js"), "utf8");
   expect(script).toContain("const PUBLIC_APPLY_ENABLED = false;");
   // Non-shipping browser handler regression only; production source/build remain locked.

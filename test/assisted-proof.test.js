@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const proof = require('../scripts/assisted-proof.js');
-const service = require('../src/apply.js');
+const load = require('./unguarded-service.cjs');
+const proof = load('../scripts/assisted-proof.js');
+const service = load('../src/apply.js');
 let next = 0;
 function fixture() {
   let revision = 1;
@@ -39,7 +40,7 @@ function fixture() {
   return { run, review, calls, names, tracks, project, source, base, api, change: () => revision++ };
 }
 test('experimental adapter requires explicit opt-in and enforces the same proven scope before mutation', async () => {
-  const make = require('../src/assisted.js');
+  const make = load('../src/assisted.js');
   for (const caseName of ['no opt-in', 'multiple cuts', 'other fps', 'unsaved project', 'supported']) {
     const f = fixture();
     f.review.experimentalConfirmed = caseName !== 'no opt-in';

@@ -1,8 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const service = require('../src/apply.js');
+const service = require('./unguarded-service.cjs')('../src/apply.js');
 
 let next = 0;
+
+test('production services reject mutation before inspecting or creating any host artifact', async () => {
+  const adapter = new Proxy({}, { get() { throw Error('Host must not be accessed'); } });
+  await assert.rejects(require('../src/apply.js').apply(adapter, {confirmed:true}), /unavailable pending validation/);
+  const assisted = require('../src/assisted.js')(adapter, {}, {}, {experimental:true});
+  await assert.rejects(assisted.prepare({confirmed:true,experimentalConfirmed:true}), /temporarily unavailable/);
+  await assert.rejects(assisted.adapter.createCandidate({}), /temporarily unavailable/);
+});
 
 test('changed gain revision rejects stale review before/during preflight and before candidate creation', async () => {
   for (const when of ['before', 'during', 'after']) {

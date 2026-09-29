@@ -3,6 +3,7 @@
   if (typeof module === 'object' && module.exports) module.exports = factory;
   else root.PodCutAssisted = factory;
 })(globalThis, function (base, api, service, scope) {
+  const MUTATION_ENABLED = false; // No runtime opt-in overrides the validation gate.
   let current;
   const projectMatches = path => typeof scope === 'string' ? path.endsWith(scope) :
     scope?.experimental === true && typeof path === 'string' && /\.prproj$/i.test(path);
@@ -41,6 +42,7 @@
     ...base,
     async inspect(trace) { current = await base.inspect(trace); return current; },
     async createCandidate(op) {
+      if (!MUTATION_ENABLED) throw new Error('Assisted draft creation is temporarily unavailable pending validation.');
       checkPlan(op);
       if (!projectMatches(current.source.projectPath)) throw new Error('Wrong or unsaved assisted project.');
       return base.createCandidate.call(adapter, op);
@@ -96,6 +98,7 @@
   return {
     adapter,
     async prepare(review, onStage) {
+      if (!MUTATION_ENABLED) throw new Error('Assisted draft creation is temporarily unavailable pending validation.');
       if (typeof scope !== 'string' && (!scope?.experimental || !review.experimentalConfirmed))
         throw new Error('Explicit experimental assisted-draft confirmation is required.');
       const stageName = stage => stage === 'completed' ? 'awaiting manual linking' :

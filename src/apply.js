@@ -5,6 +5,7 @@
   else root.PodCutApply = api;
 })(typeof globalThis === "undefined" ? this : globalThis, function (core) {
   "use strict";
+  const MUTATION_ENABLED = false; // Production service lock; independent of panel appearance.
 
   let running = false;
   let preparing = false;
@@ -63,6 +64,7 @@
   }
 
   async function apply(adapter, review, onStage) {
+    if (!MUTATION_ENABLED) throw new Error("Automatic Apply is unavailable pending validation. Analysis and review remain available.");
     if (running) throw new Error("An Apply operation is already running.");
     running = true;
     const operation = { id: id(), status: "preflight", stages: [], originalSequenceId: null,
