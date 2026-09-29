@@ -25,6 +25,8 @@ Keep only one internal cut enabled. Verify the source selects as a linked video/
 
 On reload, consent and review reset; a recorded draft must match its project, original metadata, candidate identity and ranges before proceeding. Interrupted work blocks new jobs until you check that Premiere export activity ended and any partial draft is inspected. Reloading does not cancel a native export. No operation automatically resumes.
 
+Multiple cuts within that same single source pair are implemented behind the development gate, not publicly enabled. The two-cut native proof produced three gain-preserving retained sections; its new cloned pairs still require individual native linking and user playback approval. Adjacent/overlapping cuts after ceil-to-frame alignment reject; selected decisions are never silently merged. Production remains limited to one enabled internal cut until these release gates pass.
+
 Host-proven: tested -6 dB native gain, trimmed source ranges and matching A/V timing in the clone path. Reliably rejected: extra occupied tracks/items, transitions, nested/offline/multicam/merged media, non-normal speed, disabled/reversed items, unsupported component names and detectable keyframes, wrong frame rate or cut count. Unknown: other static built-in effect values, mixer/routing, comprehensive event coverage and external-media changes. Opt-in acknowledges these unknowns; it does not detect or enforce an “unmodified clips only” restriction.
 
 ## Silence analysis

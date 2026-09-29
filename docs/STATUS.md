@@ -1,5 +1,27 @@
 # PodCut status
 
+## Two-cut assisted host proof saved; expanded creation remains gated (September 29)
+
+Code commit **b1d2d9e** generalizes the existing gain-preserving clone construction and per-pair handoff without broadening production eligibility. **Automatic Apply remains disabled; normal experimental assisted creation remains one ordinary matching V1/A1 pair, 30 fps, one enabled internal cut.** Multiple-cut creation was tested only through an ignored, exact-disposable-project `dist` substitution, retaining both Prepare/Confirm export/PCM freshness checks. The substitution was removed by rebuilding and native UDT Reload. The loaded normal runtime reported **Build 3ca50338f7f4** (not a Git hash), rejected the two-cut plan with the one-cut scope reason, reported automatic Apply disabled and no pending work, and no longer contained the diagnostic global. Native Premiere visibly restored the saved three-pair handoff after reload.
+
+Actual Premiere **26.5.0** panel Analyze produced four proposals. Only **9.070–11.800s** and **22.550–25.450s** remained enabled, without detector/default changes. Native Prepare passed and displayed two cuts, 168 removed frames, 912 retained frames, three sections and two new cloned pairs. Rapid native double-click on Confirm created **exactly one candidate, sequence count 21→22**. Separate inspection confirmed matching V1/A1 ranges below and exact equality of the original's before/after snapshot. Project `save()` returned true.
+
+Saved project: **C:\Projects\PodCut-TestMedia\Fixtures\PodCut Assisted Panel Validation 2026-09-29.prproj**. Active candidate: **PodCut ASSISTED DRAFT — linking required**, **089e95d9-6d8a-4236-83a8-2cf4568272e0**, **912 frames / 30.400s / 00:00:30:12 at 30 fps**. Original **d42ecd62-d70b-407f-a039-dac1cefb1ab3** remains its unchanged 36-second pair. Existing approved candidates were not edited.
+
+| Retained pair | Source frames, half-open | Output frames, half-open | Output timecode |
+| --- | --- | --- | --- |
+| Head | [0,273) | [0,273) | 00:00:00:00–00:00:09:03 |
+| Cloned middle | [354,677) | [273,596) | 00:00:09:03–00:00:19:26 |
+| Cloned tail | [764,1080) | [596,912) | 00:00:19:26–00:00:30:12 |
+
+Identically configured native exports are stereo 48 kHz signed 16-bit PCM: original 1,728,000 sample frames, output exactly 1,459,200. The original PCM matches the recorded -6 dB source baseline exactly. Each retained section matches its corresponding source samples exactly, excluding two video frames at each boundary (269, 319 and 312 compared frames respectively): no post-cut gain reset in any section. External evidence: `Fixtures\podcut_multicut_proof_20260929.json`, `podcut_multicut_source_20260929.wav`, `podcut_multicut_output_20260929.wav`. This establishes tested retained audio preservation, not audible approval or general effects/mixer/visual-property support.
+
+The candidate is **awaiting manual linking and new playback approval**. Native linking has not been verified for this new draft; metadata equality is not a link query. Check head paired selection, then select only the corresponding middle V/A items and native Clip > Link; deselect and repeat for the tail. Never link all segments together. Verify each video selects only its own audio with Linked Selection enabled, save, then review actual output windows **00:00:08:03–00:00:10:03** and **00:00:18:26–00:00:20:26**. Previous one-cut playback PASS does not approve this two-cut output. Expanded public creation stays gated until these checks pass.
+
+Construction clones all new retained pairs from the untouched duplicated head before any trims, then separately trims and moves them in chronological order. Existing frame alignment and adjacency/overlap rejection remain unchanged; no merging policy was added. New focused tests cover multiple cuts, disabled decisions, trimmed source mapping, partial failure/fresh retry, duplicate submission and saved multi-pair reconciliation. The earlier native trimmed-in-point/gain proof is reused for unchanged clone/trim/move operations; a new two-cut trimmed-source unit case passes, but no new native two-cut trimmed candidate is claimed.
+
+Automated: **79 Node checks passed / 2 optional skipped**, **23 UI tests passed**, manifest/reference/gate validation, normal production build and diff check passed. The saved native evidence regression checks all three retained PCM/range sections and original preservation. Broader property/event coverage and non-atomic full-workflow Undo remain explicit experimental limitations. No multiclip, tracks/fps expansion, automatic Apply enablement or redesign.
+
 ## Native freshness acceptance completed; experimental assisted flow restored (September 29)
 
 **Experimental assisted creation is restored; automatic Apply remains disabled at the service and panel boundaries.** Code commit **3e20b0a** separates the explicitly opted-in assisted service entry from the locked automatic entry, retaining the existing clone construction and shared mutation safeguards. Normal UDT-loaded `C:\Projects\PodCut\dist` visibly identifies **Build 20b572ad9f7c** (a content build identifier, not a commit). The temporary exact-project acceptance substitution and export/comparison diagnostic wrappers were removed before normal-panel validation. No persistent test bypass ships.

@@ -30,6 +30,26 @@ function retained(source, output, sourceFrame, outputFrame, frames) {
   assert.ok(actual.equals(expected), 'Retained signed channel samples changed (gain/polarity/routing/interleaving)');
 }
 
+test('saved native two-cut assisted draft preserves all three minus6 sections', {
+  skip: !process.env.PODCUT_MULTI_CUT_PROOF
+}, () => {
+  const dir = process.env.PODCUT_MULTI_CUT_PROOF;
+  const source = pcm(join(dir, 'podcut_multicut_source_20260929.wav'));
+  const output = pcm(join(dir, 'podcut_multicut_output_20260929.wav'));
+  const baseline = pcm(join(dir, 'Assisted-Draft-2026-09-28', 'podcut-assisted-source.wav'));
+  assert.ok(source.samples.equals(baseline.samples), 'Source differs from recorded minus6 baseline');
+  const e = JSON.parse(readFileSync(join(dir, 'podcut_multicut_proof_20260929.json'), 'utf8'));
+  assert.equal(e.after - e.before, 1);
+  assert.equal(e.originalUnchanged, true);
+  assert.equal(e.record.status, 'awaiting-manual-linking');
+  assert.equal(e.record.cuts.length, 2);
+  assert.equal(e.record.plan.outputFrames, 912);
+  assert.equal(output.info.sampleCount, 912 * 1600);
+  require('../src/assisted-state.js').validateDraft(e.record, e.inspected);
+  for (const s of e.record.plan.segments)
+    retained(source, output, s.sourceStartFrame + 2, s.outputStartFrame + 2, s.sourceEndFrame - s.sourceStartFrame - 4);
+});
+
 test('saved assisted draft retains both minus6 sections and awaits native linking', {
   skip: !process.env.PODCUT_ASSISTED_PROOF
 }, () => {
