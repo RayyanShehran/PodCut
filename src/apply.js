@@ -85,7 +85,7 @@
     try {
       if (completed.has(token)) throw new Error("This analysis was already applied. Analyze again for another output.");
       const prepared = await prepare(adapter, review);
-      if (assisted && (prepared.cutCount !== 1 || prepared.plan.fps !== 30 || prepared.plan.segments.length !== 2 ||
+      if (assisted && (core.assistedPlanError(prepared) ||
           !/\.prproj$/i.test(prepared.current.source.projectPath || "")))
         throw new Error("Assisted drafts require a saved project and exactly one enabled internal cut at 30 fps.");
       operation.originalSequenceId = prepared.current.source.sequenceId;

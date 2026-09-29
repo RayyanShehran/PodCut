@@ -590,6 +590,26 @@ async function assistedHooks(page) {
   await page.addInitScript(() => { window.require = id => id==='uxp' ? {entrypoints:{setup:h=>{window.hooks=h;}}} : null; });
 }
 
+test('isolated two-cut panel confirmation and handoff name all independently linked pairs', async ({page}) => {
+  const script=readFileSync(resolve(__dirname,'..','src','core.js'),'utf8');
+  await page.route('**/src/core.js',route=>route.fulfill({contentType:'text/javascript',
+    body:script.replace('const MAX_ASSISTED_CUTS = 1;','const MAX_ASSISTED_CUTS = 2;')}));
+  await assistedHooks(page);await page.goto(panelUrl);await wireAssistedPanel(page);
+  await page.locator('#analyze').click();await page.locator('#assistedOptIn').check();
+  await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','false');
+  await page.locator('#prepareAssisted').click();
+  await expect(page.locator('#assistedConfirmationText')).toContainText('2 enabled cuts');
+  await expect(page.locator('#assistedConfirmationText')).toContainText('3 sections');
+  await expect(page.locator('#assistedConfirmationText')).toContainText('2 newly cloned pairs');
+  await page.locator('#confirmAssisted').click();await page.evaluate(()=>finishAssisted());
+  await expect(page.locator('#assistedPairs')).toContainText('Pair 3');
+  await expect(page.locator('#assistedPairs')).toContainText('never all segments together');
+  await expect(page.locator('#assistedPairs')).toContainText('00:00:09.100–00:00:19.800');
+  await expect(page.locator('#assistedPairs')).toContainText('00:00:19.800–00:00:30.167');
+  await expect(page.locator('#assistedReconciliation')).toContainText('Manual linking required');
+  expect(await page.evaluate(()=>assistedSubmissions)).toBe(1);
+});
+
 test('normal assisted panel cannot create drafts without explicit experimental opt-in', async ({page}) => {
   await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
   await page.locator('#analyze').click();
@@ -624,7 +644,7 @@ test('distinct experimental panel flow enforces opt-in/one cut, duplicate lock a
   await expect(page.locator('#assistedIdentity')).toContainText('draft-id');
   await expect(page.locator('#assistedReconciliation')).toContainText('Recorded ranges match');
   await expect(page.locator('#assistedPairs')).toContainText('00:00:09.100');
-  await expect(page.locator('#assistedPairs')).toContainText('Cloned tail: native linking required');
+  await expect(page.locator('#assistedPairs')).toContainText('Cloned pair: native linking required');
   await page.locator('#confirmManualLink').click();
   await expect(page.locator('#assistedPlayback')).toContainText('User-reported linking only');
   await page.reload(); await wireAssistedPanel(page);

@@ -100,6 +100,15 @@
     return { fps, segments, outputFrames: outputStart + duration - previousEnd };
   }
 
+  const MAX_ASSISTED_CUTS = 1; // Expanded creation stays gated until native linking/playback approval.
+  function assistedPlanError(prepared) {
+    if (!prepared || prepared.cutCount < 1 || prepared.cutCount > MAX_ASSISTED_CUTS ||
+        prepared.plan.fps !== 30 || prepared.plan.segments.length !== prepared.cutCount + 1)
+      return MAX_ASSISTED_CUTS === 1 ? 'Assisted drafts require exactly one enabled internal cut at 30 fps.' :
+        `Assisted drafts require 1–${MAX_ASSISTED_CUTS} enabled internal cuts at 30 fps.`;
+    return null;
+  }
+
   // Pure timing plan only, not host eligibility. All intervals are half-open [start, end).
   // Expanded Apply stays unavailable until clip-property preservation is proved in Premiere.
   function planConsecutiveEdit({ clips, fps, cuts }) {
@@ -290,5 +299,5 @@
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
   }
 
-  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, projectPathKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, planConsecutiveEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
+  return { PRESETS, recipeForPreset, matchingPreset, readSettings, sequenceKey, projectPathKey, reviewTotals, filteredDecisions, locateSeconds, planSimpleEdit, assistedPlanError, planConsecutiveEdit, simpleSourceError, validateRecipe, mergeRanges, silenceDecisions, longPauseDecisions, analyzeAudio, analyzeAudioAsync, formatDuration, formatTimestamp };
 });

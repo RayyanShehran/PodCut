@@ -11,5 +11,7 @@ if (!(await readFile(resolve(root, "src/apply.js"), "utf8")).includes("const MUT
   throw new Error("Automatic Apply service lock missing.");
 if (!(await readFile(resolve(root, "src/main.js"), "utf8")).includes("const PUBLIC_APPLY_ENABLED = false;"))
   throw new Error("Automatic Apply panel lock missing.");
+if (!(await readFile(resolve(root, "src/core.js"), "utf8")).includes("const MAX_ASSISTED_CUTS = 1;"))
+  throw new Error("Expanded assisted creation must remain gated pending native linking/playback validation.");
 if (!manifest.entrypoints.some((entry) => entry.type === "panel" && entry.id === "podcutPanel")) throw new Error("PodCut panel entrypoint is missing");
 console.log("Manifest and panel references are valid.");

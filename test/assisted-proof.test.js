@@ -4,7 +4,7 @@ const load = require('./unguarded-service.cjs');
 const proof = load('../scripts/assisted-proof.js');
 const service = load('../src/apply.js');
 let next = 0;
-function fixture() {
+function fixture(inPoint = 0, multipleCuts = false) {
   let revision = 1;
   const item = (inPoint = 0, start = 0, end = 36, gain = -6) => ({
     start, end, inPoint, outPoint: inPoint + end - start, gain,
@@ -15,8 +15,9 @@ function fixture() {
     createSetOutPointAction(t) { return () => { this.end += t.seconds - this.outPoint; this.outPoint = t.seconds; }; },
     createMoveAction(t) { return () => { this.start += t.seconds; this.end += t.seconds; }; }
   });
-  const tracks = [[item()], [item()]], calls = [], names = [];
-  const sequence = { guid: { toString: () => 'candidate' }, getVideoTrack: () => ({ getTrackItems: () => tracks[0] }),
+  const tracks = [[item(inPoint)], [item(inPoint)]], calls = [], names = [];
+  let candidateId;
+  const sequence = { guid: { toString: () => candidateId }, getVideoTrack: () => ({ getTrackItems: () => tracks[0] }),
     getAudioTrack: () => ({ getTrackItems: () => tracks[1] }), getEndTime: () => ({ seconds: Math.max(...tracks.flat().map(i => i.end)) }) };
   const project = { path: 'C:/Fixtures/assisted.prproj', getSequences: async () => [sequence], getSequence: () => sequence,
     lockedAccess: f => f(), executeTransaction(f) { f({ addAction(a) { a(); return true; } }); return true; } };
@@ -25,7 +26,7 @@ function fixture() {
       const track = tracks.find(t => t.includes(i)); track.push(item(i.inPoint, i.start + offset.seconds, i.end + offset.seconds, i.gain));
     }; }
   }) } };
-  const metadata = { projectItemId: 'media', start: 0, end: 36, inPoint: 0, outPoint: 36, trackIndex: 0, speed: 1 };
+  const metadata = { projectItemId: 'media', start: 0, end: 36, inPoint, outPoint: inPoint + 36, trackIndex: 0, speed: 1 };
   const source = { projectId: 'project', projectPath: project.path, sequenceId: 'original', name: 'Source', durationSeconds: 36,
     fps: 30, videoTracks: 1, audioTracks: 1, captionTracks: 0, videoTransitions: 0, audioTransitions: 0,
     videoItems: [{ ...metadata }], audioItems: [{ ...metadata }], mediaPath: 'fixture.mov', unsupportedEffects: [] };
@@ -33,10 +34,11 @@ function fixture() {
     source: structuredClone(source), revision: 1, confirmed: true, experimentalConfirmed: true,
     decisions: [{ enabled: true, cutStart: 10.25, cutEnd: 11.8 }, { enabled: false, cutStart: 22.55, cutEnd: 25.45 }] };
   const base = { sourceRevision: () => revision, inspect: async () => ({ key: review.key, source, handles: { project } }),
-    createCandidate: async () => { calls.push('candidate'); return 'candidate'; },
+    createCandidate: async () => { calls.push('candidate'); for (const track of tracks) track.splice(0, track.length, item(inPoint)); return candidateId = `candidate-${calls.length}`; },
     nameCandidate: async (op, name) => { names.push(name); return true; },
     presentCandidate: async () => true, restoreOriginal: async () => { calls.push('restore'); }, reconcile: async () => {} };
-  const run = proof(base, api, service, 'assisted.prproj');
+  const run = multipleCuts ? load('../src/assisted.js', true)(base, api, load('../src/apply.js', true), 'assisted.prproj') :
+    proof(base, api, service, 'assisted.prproj');
   return { run, review, calls, names, tracks, project, source, base, api, change: () => revision++ };
 }
 test('experimental adapter requires explicit opt-in and enforces the same proven scope before mutation', async () => {
@@ -54,6 +56,53 @@ test('experimental adapter requires explicit opt-in and enforces the same proven
       assert.equal(op.status, caseName === 'supported' ? 'awaiting-manual-linking' : 'failed');
     }
     assert.equal(f.calls.filter(c => c === 'candidate').length, caseName === 'supported' ? 1 : 0);
+  }
+});
+
+test('development two-cut construction maps trimmed source, enabled subset and every retained gain', async () => {
+  for (const inPoint of [0, 2]) {
+    const f = fixture(inPoint, true);
+    f.review.decisions[1].enabled = true;
+    f.review.decisions.push({enabled:false,cutStart:30,cutEnd:31});
+    const before = structuredClone(f.source);
+    const op = await f.run.prepare(f.review);
+    assert.equal(op.status, 'awaiting-manual-linking');
+    assert.equal(op.plan.outputFrames, 947);
+    for (const track of f.tracks) {
+      assert.deepEqual(track.map(i=>[i.start,i.end,i.inPoint,i.outPoint].map(s=>Math.round(s*30))),
+        [[0,308,30*inPoint,308+30*inPoint],[308,631,354+30*inPoint,677+30*inPoint],[631,947,764+30*inPoint,1080+30*inPoint]]);
+      assert.deepEqual(track.map(i=>i.gain),[-6,-6,-6]); // Mock only; native proof separately required.
+    }
+    assert.deepEqual(f.source,before);
+  }
+});
+
+test('development two-cut partial failure is isolated and retry starts a fresh candidate', async () => {
+  const f = fixture(0,true); f.review.decisions[1].enabled = true;
+  const real = f.project.executeTransaction; let count=0;
+  f.project.executeTransaction = function(callback) { if (++count === 4) return false; return real.call(this,callback); };
+  const failed = await f.run.prepare(f.review);
+  assert.equal(failed.status,'failed'); assert.equal(f.tracks[0].length,3);
+  assert.ok(f.names[0].startsWith('PodCut FAILED')); assert.ok(f.calls.includes('restore'));
+  f.project.executeTransaction=real;
+  const retried = await f.run.prepare(f.review);
+  assert.equal(retried.status,'awaiting-manual-linking');
+  assert.notEqual(retried.candidateSequenceId,failed.candidateSequenceId);
+  assert.equal(f.calls.filter(c=>c==='candidate').length,2);
+  assert.equal(f.tracks[0].length,3);
+});
+
+test('development two-cut double submission creates one candidate; aligned adjacency rejects before mutation', async () => {
+  const f=fixture(0,true); f.review.decisions[1].enabled=true;
+  const results=await Promise.allSettled([f.run.prepare(f.review),f.run.prepare(f.review)]);
+  assert.equal(results.filter(r=>r.status==='fulfilled' && r.value.status==='awaiting-manual-linking').length,1);
+  assert.equal(f.calls.filter(c=>c==='candidate').length,1);
+  for (const secondStart of [11.8,11.801,11.7]) {
+    const f=fixture(0,true); f.review.decisions[1]={enabled:true,cutStart:secondStart,cutEnd:13};
+    const op=await f.run.prepare(f.review);
+    // 11.801 rounds to frame 355 and legitimately leaves one frame; exact adjacency/overlap reject.
+    assert.equal(op.status,secondStart===11.801?'awaiting-manual-linking':'failed');
+    assert.equal(f.calls.filter(c=>c==='candidate').length,secondStart===11.801?1:0);
   }
 });
 test('assisted proof retains only enabled ranges and ends awaiting manual linking, never finished', async () => {

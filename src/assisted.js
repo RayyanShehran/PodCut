@@ -1,8 +1,9 @@
-// Experimental assisted editing only: one internal cut at 30 fps. Never automatic Apply.
+// Experimental assisted editing only: internal cuts in one source pair at 30 fps. Never automatic Apply.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory;
   else root.PodCutAssisted = factory;
 })(globalThis, function (base, api, service, scope) {
+  const core = typeof module === 'object' && module.exports ? require('./core.js') : globalThis.PodCutCore;
   const MUTATION_ENABLED = true; // Experimental assisted path only; automatic Apply stays locked.
   let current;
   const projectMatches = path => typeof scope === 'string' ? path.endsWith(scope) :
@@ -12,8 +13,8 @@
       throw new Error('Source changed during assisted preparation. Analyze again.');
   };
   const checkPlan = op => {
-    if (op.cutCount !== 1 || op.plan.fps !== 30 || op.plan.segments.length !== 2)
-      throw new Error('Assisted drafts require exactly one enabled internal cut at 30 fps.');
+    const reason = core.assistedPlanError(op);
+    if (reason) throw new Error(reason);
   };
   const candidate = async op => {
     const project = current.handles.project;
@@ -54,18 +55,28 @@
       const editor = api.SequenceEditor.getEditor(sequence);
       let items = await pairs(sequence);
       if (items.some(track => track.length !== 1)) throw new Error('Draft changed before editing.');
-      const [head, tail] = op.plan.segments;
-      transaction(project, op, () => items.map(track => editor.createCloneTrackItemAction(
-        track[0], tick(op.sourceSnapshot.durationSeconds), 0, 0, true, false)), 'clone tails');
+      const segments = op.plan.segments, originals = items.map(track => track[0]);
+      // Clone every tail from the untouched property-bearing head, before any trimming.
+      for (let i = 1; i < segments.length; i++) {
+        transaction(project, op, () => originals.map(item => editor.createCloneTrackItemAction(
+          item, tick(op.sourceSnapshot.durationSeconds * i), 0, 0, true, false)), `clone pair ${i + 1}`);
+        items = await pairs(sequence);
+        if (items.some(track => track.length !== i + 1)) throw new Error('Retained clone count differs from plan.');
+      }
       items = await pairs(sequence);
-      if (items.some(track => track.length !== 2)) throw new Error('Expected exactly two retained pairs.');
-      transaction(project, op, () => items.map(track => track[1].createSetInPointAction(
-        tick(tail.sourceStartFrame / op.plan.fps))), 'trim tails');
+      for (let i = 1; i < segments.length; i++) {
+        transaction(project, op, () => items.map(track => track[i].createSetInPointAction(
+          tick(segments[i].sourceStartFrame / op.plan.fps))), `trim pair ${i + 1} in`);
+        transaction(project, op, () => items.map(track => track[i].createSetOutPointAction(
+          tick(segments[i].sourceEndFrame / op.plan.fps))), `trim pair ${i + 1} out`);
+      }
       transaction(project, op, () => items.map(track => track[0].createSetOutPointAction(
-        tick(head.sourceEndFrame / op.plan.fps))), 'trim heads');
-      const starts = await Promise.all(items.map(track => track[1].getStartTime()));
-      transaction(project, op, () => items.map((track, i) => track[1].createMoveAction(
-        tick(tail.outputStartFrame / op.plan.fps - starts[i].seconds))), 'move tails');
+        tick(segments[0].sourceEndFrame / op.plan.fps))), 'trim head');
+      for (let i = 1; i < segments.length; i++) {
+        const starts = await Promise.all(items.map(track => track[i].getStartTime()));
+        transaction(project, op, () => items.map((track, j) => track[i].createMoveAction(
+          tick(segments[i].outputStartFrame / op.plan.fps - starts[j].seconds))), `move pair ${i + 1}`);
+      }
       return true;
     },
     async verifyCandidate(op) {
@@ -77,8 +88,8 @@
         throw new Error('Draft duration differs from plan.');
       const items = await pairs(sequence);
       for (const track of items) {
-        if (track.length !== 2) throw new Error('Draft item count differs.');
-        for (let i = 0; i < 2; i++) {
+        if (track.length !== op.plan.segments.length) throw new Error('Draft item count differs.');
+        for (let i = 0; i < track.length; i++) {
           const item = track[i], segment = op.plan.segments[i];
           const actual = await Promise.all([item.getStartTime(), item.getEndTime(), item.getInPoint(), item.getOutPoint()]);
           const expected = [segment.outputStartFrame, segment.outputEndFrame, segment.sourceStartFrame, segment.sourceEndFrame];

@@ -338,8 +338,8 @@
     if (!draftRecord) return;
     $("#assistedIdentity").textContent = `${draftRecord.outputName || "Interrupted assisted draft"} (${draftRecord.candidateSequenceId || "candidate not yet identified"}). Project: ${draftRecord.projectPath || "unknown"}.`;
     const plan = draftRecord.plan;
-    $("#assistedPairs").textContent = plan?.segments?.length === 2 ? plan.segments.map((part, i) =>
-      `Pair ${i + 1}: V1/A1 ${core.formatTimestamp(part.outputStartFrame / plan.fps)}–${core.formatTimestamp(part.outputEndFrame / plan.fps)}. ${i ? "Cloned tail: native linking required." : "Retained head: check its native linked selection."}`).join(" ") : "Inspect any partial candidate before retrying. No operation is automatically resumed.";
+    $("#assistedPairs").textContent = plan?.segments?.length >= 2 ? plan.segments.map((part, i) =>
+      `Pair ${i + 1}: V1/A1 ${core.formatTimestamp(part.outputStartFrame / plan.fps)}–${core.formatTimestamp(part.outputEndFrame / plan.fps)}. ${i ? "Cloned pair: native linking required." : "Retained head: check its native linked selection."}`).join(" ") + " Link each corresponding V/A pair individually, never all segments together." : "Inspect any partial candidate before retrying. No operation is automatically resumed.";
     $("#assistedPlayback").textContent = manualLinkReported ? "User-reported linking only — awaiting playback review. Watch/listen around the join and ending, then save. No programmatic link or audible-quality PASS is claimed." :
       "Manual linking and playback are user checks, not programmatic verification. Any earlier confirmation must be checked again after plugin reload. Save this project after linking.";
     syncControls();
@@ -424,7 +424,7 @@
     try { readyApply = await validateAssistedReview(); }
     catch (error) { message(error.message || String(error), "error"); return; }
     assistedConfirmationReview = JSON.stringify(applyReview(false));
-    $("#assistedConfirmationText").textContent = `Prepare a separate assisted draft from “${readyApply.current.source.name}”? Only the one enabled cut removes ${readyApply.removedFrames} frames; retain ${readyApply.plan.outputFrames} frames. The original stays unchanged. The cloned tail requires manual native A/V linking. Built-in effect values, mixer/routing and external-media freshness remain unverified. This is an experimental draft, not finished output. Full-workflow Undo is not one-step.`;
+    $("#assistedConfirmationText").textContent = `Prepare a separate assisted draft from “${readyApply.current.source.name}”? ${readyApply.cutCount} enabled cuts remove ${readyApply.removedFrames} frames; retain ${readyApply.plan.outputFrames} frames in ${readyApply.plan.segments.length} sections. ${readyApply.plan.segments.length - 1} newly cloned pairs require manual native A/V linking, each pair individually. The original stays unchanged. Built-in effect values, mixer/routing and external-media freshness remain unverified. This is an experimental draft, not finished output. Full-workflow Undo is not one-step.`;
     $("#assistedConfirmation").hidden = false;
   }
 
