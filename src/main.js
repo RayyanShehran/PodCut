@@ -6,7 +6,7 @@
   const audio = globalThis.PodCutAudio;
   const assistedState = globalThis.PodCutAssistedState;
   const PUBLIC_APPLY_ENABLED = false; // Faithful linked-pair preservation and comprehensive freshness remain unverified.
-  const ASSISTED_PANEL_ENABLED = false; // Action-boundary PCM verification awaits native acceptance.
+  const ASSISTED_PANEL_ENABLED = true; // Restricted experimental flow; both boundaries verify rendered PCM.
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
   let recipe = core.recipeForPreset("natural");

@@ -65,6 +65,17 @@
 
   async function apply(adapter, review, onStage) {
     if (!MUTATION_ENABLED) throw new Error("Automatic Apply is unavailable pending validation. Analysis and review remain available.");
+    return execute(adapter, review, onStage);
+  }
+
+  async function prepareAssisted(adapter, review, onStage) {
+    if (!review?.experimentalConfirmed) throw new Error("Explicit experimental assisted-draft confirmation is required.");
+    if (typeof adapter.sourceRevision !== "function" || !Number.isInteger(review.revision))
+      throw new Error("Source change monitoring is required for assisted drafts.");
+    return execute(adapter, review, onStage, true);
+  }
+
+  async function execute(adapter, review, onStage, assisted = false) {
     if (running) throw new Error("An Apply operation is already running.");
     running = true;
     const operation = { id: id(), status: "preflight", stages: [], originalSequenceId: null,
@@ -74,6 +85,9 @@
     try {
       if (completed.has(token)) throw new Error("This analysis was already applied. Analyze again for another output.");
       const prepared = await prepare(adapter, review);
+      if (assisted && (prepared.cutCount !== 1 || prepared.plan.fps !== 30 || prepared.plan.segments.length !== 2 ||
+          !/\.prproj$/i.test(prepared.current.source.projectPath || "")))
+        throw new Error("Assisted drafts require a saved project and exactly one enabled internal cut at 30 fps.");
       operation.originalSequenceId = prepared.current.source.sequenceId;
       operation.projectId = prepared.current.source.projectId;
       operation.sourceSnapshot = prepared.current.source;
@@ -118,5 +132,5 @@
     } finally { running = false; }
   }
 
-  return { prepare, apply };
+  return { prepare, apply, prepareAssisted };
 });

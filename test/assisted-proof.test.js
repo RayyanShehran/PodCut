@@ -30,7 +30,7 @@ function fixture() {
     fps: 30, videoTracks: 1, audioTracks: 1, captionTracks: 0, videoTransitions: 0, audioTransitions: 0,
     videoItems: [{ ...metadata }], audioItems: [{ ...metadata }], mediaPath: 'fixture.mov', unsupportedEffects: [] };
   const review = { key: `assisted-${++next}`, recipe: '{}', currentRecipe: '{}', analysisId: next,
-    source: structuredClone(source), revision: 1, confirmed: true,
+    source: structuredClone(source), revision: 1, confirmed: true, experimentalConfirmed: true,
     decisions: [{ enabled: true, cutStart: 10.25, cutEnd: 11.8 }, { enabled: false, cutStart: 22.55, cutEnd: 25.45 }] };
   const base = { sourceRevision: () => revision, inspect: async () => ({ key: review.key, source, handles: { project } }),
     createCandidate: async () => { calls.push('candidate'); return 'candidate'; },

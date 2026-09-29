@@ -4,12 +4,38 @@ const service = require('./unguarded-service.cjs')('../src/apply.js');
 
 let next = 0;
 
-test('production services reject mutation before inspecting or creating any host artifact', async () => {
+test('automatic Apply stays locked and assisted preparation requires explicit opt-in before host access', async () => {
   const adapter = new Proxy({}, { get() { throw Error('Host must not be accessed'); } });
   await assert.rejects(require('../src/apply.js').apply(adapter, {confirmed:true}), /unavailable pending validation/);
   const assisted = require('../src/assisted.js')(adapter, {}, {}, {experimental:true});
-  await assert.rejects(assisted.prepare({confirmed:true,experimentalConfirmed:true}), /temporarily unavailable/);
-  await assert.rejects(assisted.adapter.createCandidate({}), /temporarily unavailable/);
+  await assert.rejects(assisted.prepare({confirmed:true}), /confirmation/);
+  await assert.rejects(require('../src/apply.js').prepareAssisted(adapter, {confirmed:true}), /confirmation/);
+});
+
+test('production assisted entry enforces narrow scope, freshness and shared duplicate protection', async () => {
+  const production = require('../src/apply.js');
+  for (const kind of ['supported', 'two cuts', '25 fps', 'unsaved', 'stale', 'unmonitored']) {
+    const f = fixture();
+    f.source.projectPath = 'C:/Fixtures/assisted.prproj';
+    f.review.source = structuredClone(f.source);
+    f.review.experimentalConfirmed = true; f.review.revision = 0;
+    f.adapter.sourceRevision = () => kind === 'stale' ? 1 : 0;
+    f.review.decisions[1].enabled = kind === 'two cuts';
+    if (kind === '25 fps') f.review.source.fps = f.source.fps = 25;
+    if (kind === 'unsaved') f.review.source.projectPath = f.source.projectPath = '';
+    if (kind === 'unmonitored') {
+      delete f.adapter.sourceRevision;
+      await assert.rejects(production.prepareAssisted(f.adapter, f.review), /monitoring/);
+    } else {
+      const op = await production.prepareAssisted(f.adapter, f.review);
+      assert.equal(op.status, kind === 'supported' ? 'completed' : 'failed');
+      if (kind === 'supported') {
+        assert.equal((await production.prepareAssisted(f.adapter, f.review)).status, 'failed');
+        await assert.rejects(production.apply(f.adapter, f.review), /unavailable/);
+      }
+    }
+    assert.equal(f.calls.filter(c => c === 'candidate').length, kind === 'supported' ? 1 : 0);
+  }
 });
 
 test('changed gain revision rejects stale review before/during preflight and before candidate creation', async () => {

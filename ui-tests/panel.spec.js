@@ -98,7 +98,7 @@ test("recipe changes invalidate review and long text wraps", async ({ page }) =>
 test('short narrow panel exposes availability without review and long handoff controls fit', async ({page}) => {
   await page.setViewportSize({width:250,height:210}); await page.goto(panelUrl);
   await expect(page.locator('#review')).toBeHidden();
-  await expect(page.locator('#availability')).toContainText('temporarily unavailable pending validation');
+  await expect(page.locator('#availability')).toContainText('Experimental assisted drafts require opt-in');
   const notice = await page.locator('#availability p').first().boundingBox();
   expect(notice.y).toBeGreaterThanOrEqual(0); expect(notice.y + notice.height).toBeLessThanOrEqual(210);
   await page.evaluate(()=>{
@@ -115,20 +115,20 @@ test('short narrow panel exposes availability without review and long handoff co
   await page.locator('#analyze').scrollIntoViewIfNeeded(); await expect(page.locator('#analyze')).toBeVisible();
 });
 
-test('normal services remain locked even if button disabled attributes are removed', async ({page}) => {
+test('automatic Apply and assisted opt-in guard survive removed button disabled attributes', async ({page}) => {
   await page.goto(panelUrl);
   const outcomes=await page.evaluate(async()=>{
     document.getElementById('apply').setAttribute('aria-disabled','false');
     document.getElementById('prepareAssisted').setAttribute('aria-disabled','false');
     const adapter=new Proxy({}, {get(){throw Error('Unexpected host access');}}),errors=[];
     for(const call of [()=>PodCutApply.apply(adapter,{confirmed:true}),
-      ()=>PodCutAssisted(adapter,{},PodCutApply,{experimental:true}).prepare({experimentalConfirmed:true,confirmed:true})]) {
+      ()=>PodCutAssisted(adapter,{},PodCutApply,{experimental:true}).prepare({confirmed:true})]) {
       try{await call();errors.push('Unexpected acceptance');}catch(e){errors.push(e.message);}
     }
     return errors;
   });
   expect(outcomes[0]).toContain('unavailable pending validation');
-  expect(outcomes[1]).toContain('temporarily unavailable');
+  expect(outcomes[1]).toContain('confirmation is required');
 });
 
 test("host-safe controls keep explicit geometry, typography, and icons", async ({ page }) => {
@@ -586,23 +586,15 @@ async function wireAssistedPanel(page) {
   await expect(page.locator('#sequenceName')).toHaveText('Interview');
 }
 
-async function assistedHooks(page, isolated = true) {
-  if (isolated) {
-    const script = readFileSync(resolve(__dirname, "..", "src", "main.js"), "utf8");
-    expect(script).toContain("const ASSISTED_PANEL_ENABLED = false;");
-    // Non-shipping handler checks only; no runtime or persisted production bypass.
-    await page.route("**/src/main.js", route => route.fulfill({ contentType: "text/javascript",
-      body: script.replace("const ASSISTED_PANEL_ENABLED = false;", "const ASSISTED_PANEL_ENABLED = true;") }));
-  }
+async function assistedHooks(page) {
   await page.addInitScript(() => { window.require = id => id==='uxp' ? {entrypoints:{setup:h=>{window.hooks=h;}}} : null; });
 }
 
-test('normal assisted panel cannot create drafts while native reopening freshness is unresolved', async ({page}) => {
-  await assistedHooks(page, false); await page.goto(panelUrl); await wireAssistedPanel(page);
+test('normal assisted panel cannot create drafts without explicit experimental opt-in', async ({page}) => {
+  await assistedHooks(page); await page.goto(panelUrl); await wireAssistedPanel(page);
   await page.locator('#analyze').click();
   await page.locator('#decisions input').last().uncheck();
-  await page.locator('#assistedOptIn').check();
-  await expect(page.locator('#assistedEligibility')).toContainText('temporarily locked');
+  await expect(page.locator('#assistedEligibility')).toContainText('Experimental');
   await expect(page.locator('#prepareAssisted')).toHaveAttribute('aria-disabled','true');
   await page.evaluate(()=>{document.querySelector('#prepareAssisted').click();document.querySelector('#confirmAssisted').click();});
   await expect(page.locator('#assistedConfirmation')).toBeHidden();

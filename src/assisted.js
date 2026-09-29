@@ -3,7 +3,7 @@
   if (typeof module === 'object' && module.exports) module.exports = factory;
   else root.PodCutAssisted = factory;
 })(globalThis, function (base, api, service, scope) {
-  const MUTATION_ENABLED = false; // No runtime opt-in overrides the validation gate.
+  const MUTATION_ENABLED = true; // Experimental assisted path only; automatic Apply stays locked.
   let current;
   const projectMatches = path => typeof scope === 'string' ? path.endsWith(scope) :
     scope?.experimental === true && typeof path === 'string' && /\.prproj$/i.test(path);
@@ -99,11 +99,11 @@
     adapter,
     async prepare(review, onStage) {
       if (!MUTATION_ENABLED) throw new Error('Assisted draft creation is temporarily unavailable pending validation.');
-      if (typeof scope !== 'string' && (!scope?.experimental || !review.experimentalConfirmed))
+      if (!review.experimentalConfirmed || (typeof scope !== 'string' && !scope?.experimental))
         throw new Error('Explicit experimental assisted-draft confirmation is required.');
       const stageName = stage => stage === 'completed' ? 'awaiting manual linking' :
         stage === 'creating retained subclip' ? 'preparing retained track clone' : stage;
-      const result = await service.apply(adapter, review, onStage && ((stage, op) => onStage(stageName(stage), op)));
+      const result = await service.prepareAssisted(adapter, review, onStage && ((stage, op) => onStage(stageName(stage), op)));
       result.stages = result.stages.map(stageName);
       if (result.status === 'completed') result.status = 'awaiting-manual-linking';
       return result;
